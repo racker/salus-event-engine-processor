@@ -35,10 +35,8 @@ import org.apache.commons.lang.RandomStringUtils;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.springframework.test.annotation.DirtiesContext;
 
 @Slf4j
-@DirtiesContext
 public class EsperQueryTest {
 
   @Before
@@ -47,13 +45,8 @@ public class EsperQueryTest {
     configuration.getCommon().addEventType(SalusEnrichedMetric.class);
     EPRuntime runtime = EPRuntimeProvider.getDefaultRuntime(configuration);
 
-    SalusEnrichedMetric metric = createSalusEnrichedMetric();
-    String basicInsertEntryWindowQuery = getBasicInsertQuery(metric);
-
     EsperEngine.compileAndDeployQuery(runtime, configuration, EsperQuery.CREATE_ENTRY_WINDOW);
-    EsperEngine.compileAndDeployQuery(runtime, configuration, EsperQuery.CREATE_STATE_COUNT_TABLE)
-        .addListener((newData, oldData, stmt, rt) ->
-        log.info("Saw new event in count table={}", stmt));
+    EsperEngine.compileAndDeployQuery(runtime, configuration, EsperQuery.CREATE_STATE_COUNT_TABLE);
     EsperEngine.compileAndDeployQuery(runtime, configuration, EsperQuery.CREATE_STATE_COUNT_SATISFIED_WINDOW);
     EsperEngine.compileAndDeployQuery(runtime, configuration, EsperQuery.CREATE_QUORUM_STATE_WINDOW);
 
@@ -68,26 +61,8 @@ public class EsperQueryTest {
   }
 
   /**
-   * Used to test the basic query logic and not the extra java methods
-   * @param metric A salus metric to populate the missing query fields
-   * @return An epl to be deployed to esper
+   * Verify the basic entry window query used in tests does move new events into that window.
    */
-  private String getBasicInsertQuery(SalusEnrichedMetric metric) {
-    return String.format(""
-            + "@name('%s') "
-            + "insert into EntryWindow "
-            + "select * from SalusEnrichedMetric("
-            + "   tenantId='%s' and "
-            + "   monitorSelectorScope='%s' and "
-            + "   monitorType='%s' and "
-            + "   resourceId not in (excludedResourceIds) and "
-            + "   tags('os')='linux' and tags('dc')='private')",
-        metric.getTaskId(),
-        metric.getTenantId(),
-        metric.getMonitorSelectorScope(),
-        metric.getMonitorType());
-  }
-
   @Test
   public void testEntryWindow() {
     Configuration configuration = new Configuration();
@@ -109,6 +84,9 @@ public class EsperQueryTest {
         new Object[]{metric.getTenantId(), metric.getMonitorId(), metric.getState()});
   }
 
+  /**
+   * Verify the tracked state counts are updated correctly upon seeing various events.
+   */
   @Test
   public void testUpdateStateCountTable() {
     Configuration configuration = new Configuration();
@@ -170,6 +148,10 @@ public class EsperQueryTest {
 
   }
 
+  /**
+   * Verify events only enter the state count satisfied window if the expected state
+   * count has been observed.
+   */
   @Test
   public void testUpdateStateCountSatisfiedWindow() {
     Configuration configuration = new Configuration();
@@ -184,7 +166,9 @@ public class EsperQueryTest {
     SupportUpdateListener listener = new SupportUpdateListener();
     stmt.addListener(listener);
 
+    // the event will not enter the window until the state count has been satisfied
     runtime.getEventService().sendEventBean(metric, SalusEnrichedMetric.class.getSimpleName());
+    listener.assertNotInvoked();
     runtime.getEventService().sendEventBean(metric, SalusEnrichedMetric.class.getSimpleName());
 
     EPAssertionUtil.assertProps(listener.assertOneGetNewAndReset(),
@@ -224,6 +208,28 @@ public class EsperQueryTest {
             "os", "linux",
             "dc", "private"
         ));
+  }
+
+  /**
+   * Used to test the basic query logic and not the extra java methods.
+   *
+   * @param metric A salus metric to populate the missing query fields
+   * @return An epl to be deployed to esper
+   */
+  private String getBasicInsertQuery(SalusEnrichedMetric metric) {
+    return String.format(""
+            + "@name('%s') "
+            + "insert into EntryWindow "
+            + "select * from SalusEnrichedMetric("
+            + "   tenantId='%s' and "
+            + "   monitorSelectorScope='%s' and "
+            + "   monitorType='%s' and "
+            + "   resourceId not in (excludedResourceIds) and "
+            + "   tags('os')='linux' and tags('dc')='private')",
+        metric.getTaskId(),
+        metric.getTenantId(),
+        metric.getMonitorSelectorScope(),
+        metric.getMonitorType());
   }
 
 }

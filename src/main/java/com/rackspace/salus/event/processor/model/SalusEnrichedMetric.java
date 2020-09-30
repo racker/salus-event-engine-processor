@@ -19,21 +19,27 @@ package com.rackspace.salus.event.processor.model;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import lombok.Data;
 
 @Data
 public class SalusEnrichedMetric extends EnrichedMetric {
   // initial fields are set when ingesting a new metric
   String resourceId;
-  String monitorId;
+  UUID monitorId;
   String zoneId;
   String monitorType;
   String monitorSelectorScope;
   // the below fields are set when the metric matches a Task Query within Esper
-  String taskId;
+  UUID taskId;
   List<String> excludedResourceIds;
   Instant stateEvaluationTimestamp;
   Map<String, Integer> expectedStateCounts;
 //  EventState state;
   String state;
+
+  public String getCompositeKey() {
+    return String.format("%s:%s:%s:%s",
+        tenantId, resourceId, monitorId, taskId);
+  }
 }

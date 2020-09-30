@@ -31,10 +31,13 @@ import com.espertech.esper.runtime.client.EPRuntimeProvider;
 import com.espertech.esper.runtime.client.EPStatement;
 import com.espertech.esper.runtime.client.EPUndeployException;
 import com.rackspace.salus.event.processor.config.EsperQuery;
+import com.rackspace.salus.event.processor.engine.EsperEventsListener;
 import com.rackspace.salus.event.processor.engine.StateEvaluator;
+import com.rackspace.salus.event.processor.engine.TaskWarmthTracker;
 import com.rackspace.salus.event.processor.model.EnrichedMetric;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -43,8 +46,15 @@ public class EsperEngine {
 
   private EPRuntime runtime;
   private Configuration config;
+  private TaskWarmthTracker taskWarmthTracker;
+  private EsperEventsListener esperEventsListener;
 
-  public EsperEngine() {
+  @Autowired
+  public EsperEngine(TaskWarmthTracker taskWarmthTracker,
+      EsperEventsListener esperEventsListener) {
+    this.taskWarmthTracker = taskWarmthTracker;
+    this.esperEventsListener = esperEventsListener;
+
     this.config = new Configuration();
     this.config.getCommon().addEventType(SalusEnrichedMetric.class);
     this.config.getCommon().addImport(StateEvaluator.class);
@@ -65,25 +75,29 @@ public class EsperEngine {
 
     this.runtime = EPRuntimeProvider.getDefaultRuntime(this.config);
 
-    initialize();
+//    initialize();
   }
 
-  private void initialize() {
+  void initialize() {
     createWindows();
     createWindowLogic();
+    createListeners();
   }
 
   private void createWindows() {
     compileAndDeployQuery(EsperQuery.CREATE_ENTRY_WINDOW);
     compileAndDeployQuery(EsperQuery.CREATE_STATE_COUNT_TABLE);
     compileAndDeployQuery(EsperQuery.CREATE_STATE_COUNT_SATISFIED_WINDOW);
-    compileAndDeployQuery(EsperQuery.CREATE_QUORUM_STATE_WINDOW);
   }
 
   private void createWindowLogic() {
     compileAndDeployQuery(EsperQuery.UPDATE_STATE_COUNT_LOGIC);
     compileAndDeployQuery(EsperQuery.STATE_COUNT_SATISFIED_LOGIC);
-    compileAndDeployQuery(EsperQuery.QUORUM_STATE_LOGIC);
+  }
+
+  private void createListeners() {
+    compileAndDeployQuery(EsperQuery.STATE_COUNT_SATISFIED_LISTENER)
+        .addListener(esperEventsListener);
   }
 
   // TODO: can CompilerArguments be created at the class level?
@@ -128,8 +142,24 @@ public class EsperEngine {
     }
   }
 
-  public static void undeployAll(EPRuntime runtime)
-      throws EPUndeployException {
+  // TODO there must be a better way than this
+  public void undeploy(String queryName) throws EPUndeployException {
+    String[] query = runtime.getDeploymentService().getDeployments();
+    for (String q : query) {
+      for (EPStatement s : runtime.getDeploymentService().getDeployment(q).getStatements()) {
+        if (s.getName().equals(queryName)) {
+          runtime.getDeploymentService().undeploy(s.getDeploymentId());
+          return;
+        }
+      }
+    }
+  }
+
+  public void undeployAll() throws EPUndeployException {
+    undeployAll(runtime);
+  }
+
+  public static void undeployAll(EPRuntime runtime) throws EPUndeployException {
     runtime.getDeploymentService().undeployAll();
   }
 

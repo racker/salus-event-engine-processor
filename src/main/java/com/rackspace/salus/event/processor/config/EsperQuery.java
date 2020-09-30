@@ -26,31 +26,31 @@ public class EsperQuery {
   // The runtime, by default, does not guarantee to execute competing statements in any particular order unless using @Priority
 
   public static final String CREATE_ENTRY_WINDOW = ""
+      + "@name('createEntryWindow') "
       + "create window EntryWindow.std:unique("
       + "   tenantId, resourceId, monitorId, taskId, zoneId) as "
       + "select * from " + SALUS_EVENT_NAME; // defines the schema for stored events
 
   public static final String CREATE_STATE_COUNT_TABLE = ""
+      + "@name('createStateCountTable') "
       + "create table StateCountTable ("
       + "   tenantId string primary key,"
       + "   resourceId string primary key,"
-      + "   monitorId string primary key,"
-      + "   taskId string primary key,"
+      + "   monitorId java.util.UUID primary key,"
+      + "   taskId java.util.UUID primary key,"
       + "   zoneId string primary key,"
       + "   state string,"
       + "   currentCount int"
       + ")";
 
   public static final String CREATE_STATE_COUNT_SATISFIED_WINDOW = ""
+      + "@name('createStateCountSatisfiedWindow') "
       + "create window StateCountSatisfiedWindow.std:unique("
       + "   tenantId, resourceId, monitorId, taskId, zoneId) as "
       + "select * from " + SALUS_EVENT_NAME; // defines the schema for stored events
 
-  public static final String CREATE_QUORUM_STATE_WINDOW = ""
-      + "create window QuorumStateWindow.std:unique(tenantId, resourceId, monitorId, taskId) as "
-      + "select * from " + SALUS_EVENT_NAME; // defines the schema for stored events
-
   public static final String UPDATE_STATE_COUNT_LOGIC = ""
+      + "@name('stateCountTableLogic') "
       + "on EntryWindow as ew "
       + "merge into StateCountTable as sct "
       + "where "
@@ -69,6 +69,7 @@ public class EsperQuery {
       + "        select tenantId, resourceId, monitorId, taskId, zoneId, state, 1";
 
   public static final String STATE_COUNT_SATISFIED_LOGIC = ""
+      + "@name('stateCountSatisfiedLogic') "
       + "insert into StateCountSatisfiedWindow "
       + "select ew.* from EntryWindow as ew "
       + "   where "
@@ -82,10 +83,10 @@ public class EsperQuery {
       + "              ew.zoneId = sct.zoneId"
       + "       ) >= ew.expectedStateCounts(ew.state)"; // TODO: can we guarantee order of updates better?
 
-  public static final String QUORUM_STATE_LOGIC = ""
-      + "insert into QuorumStateWindow "
-      + "select StateEvaluator.quorumState(window(*)) "
-      + "   from StateCountSatisfiedWindow as scsw "
-      + "   group by scsw.tenantId, scsw.resourceId, scsw.monitorId, scsw.taskId "
-      + "   having count(*) > 1 "; // TODO: is this line needed?
+  public static final String STATE_COUNT_SATISFIED_LISTENER = ""
+      + "@name('eventStateListener') "
+      + "select window(*) from StateCountSatisfiedWindow "
+      + "   group by tenantId, resourceId, monitorId, taskId "
+      + "   having count(*) > 0";
+
 }

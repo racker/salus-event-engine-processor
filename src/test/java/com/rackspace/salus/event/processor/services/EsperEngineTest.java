@@ -14,70 +14,87 @@
  * limitations under the License.
  */
 
-package com.rackspace.salus.event.processor.config;
+package com.rackspace.salus.event.processor.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.espertech.esper.common.client.configuration.Configuration;
 import com.espertech.esper.common.client.fireandforget.EPFireAndForgetQueryResult;
 import com.espertech.esper.common.client.scopetest.EPAssertionUtil;
-import com.espertech.esper.runtime.client.EPRuntime;
-import com.espertech.esper.runtime.client.EPRuntimeProvider;
 import com.espertech.esper.runtime.client.EPStatement;
 import com.espertech.esper.runtime.client.EPUndeployException;
 import com.espertech.esper.runtime.client.scopetest.SupportUpdateListener;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.rackspace.salus.event.processor.engine.EsperEventsListener;
+import com.rackspace.salus.event.processor.engine.StateEvaluator;
+import com.rackspace.salus.event.processor.engine.TaskWarmthTracker;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
-import com.rackspace.salus.event.processor.services.EsperEngine;
+import com.rackspace.salus.telemetry.repositories.BoundMonitorRepository;
+import com.rackspace.salus.telemetry.repositories.MonitorRepository;
+import com.rackspace.salus.telemetry.repositories.StateChangeRepository;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.Map;
-import lombok.extern.slf4j.Slf4j;
+import java.util.UUID;
 import org.apache.commons.lang.RandomStringUtils;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.junit4.SpringRunner;
 
-@Slf4j
-public class EsperQueryTest {
+@RunWith(SpringRunner.class)
+@SpringBootTest(classes = {
+    EsperEngine.class, StateEvaluator.class, TaskWarmthTracker.class,
+    EsperEventsHandler.class, EsperEventsListener.class,
+    SimpleMeterRegistry.class, ObjectMapper.class})
+public class EsperEngineTest {
+
+  @Autowired
+  EsperEngine esperEngine;
+
+  @Autowired
+  EsperEventsListener eventsListener;
+
+  @Autowired
+  EsperEventsHandler eventsHandler;
+
+  @MockBean
+  MonitorRepository monitorRepository;
+
+  @MockBean
+  StateChangeRepository stateChangeRepository;
+
+  @MockBean
+  BoundMonitorRepository boundMonitorRepository;
+
 
   @Before
   public void setup() {
-    Configuration configuration = new Configuration();
-    configuration.getCommon().addEventType(SalusEnrichedMetric.class);
-    EPRuntime runtime = EPRuntimeProvider.getDefaultRuntime(configuration);
-
-    EsperEngine.compileAndDeployQuery(runtime, configuration, EsperQuery.CREATE_ENTRY_WINDOW);
-    EsperEngine.compileAndDeployQuery(runtime, configuration, EsperQuery.CREATE_STATE_COUNT_TABLE);
-    EsperEngine.compileAndDeployQuery(runtime, configuration, EsperQuery.CREATE_STATE_COUNT_SATISFIED_WINDOW);
-    EsperEngine.compileAndDeployQuery(runtime, configuration, EsperQuery.CREATE_QUORUM_STATE_WINDOW);
-
-    EsperEngine.compileAndDeployQuery(runtime, configuration, EsperQuery.UPDATE_STATE_COUNT_LOGIC);
-    EsperEngine.compileAndDeployQuery(runtime, configuration, EsperQuery.STATE_COUNT_SATISFIED_LOGIC);
-//    EsperEngine.compileAndDeployQuery(runtime, configuration, EsperQuery.QUORUM_STATE_LOGIC);
+    esperEngine.initialize();
   }
-
   @After
   public void destroy() throws EPUndeployException {
-    EsperEngine.undeployAll(EPRuntimeProvider.getDefaultRuntime());
+    esperEngine.undeployAll();
   }
 
-  /**
-   * Verify the basic entry window query used in tests does move new events into that window.
-   */
   @Test
-  public void testEntryWindow() {
-    Configuration configuration = new Configuration();
-    configuration.getCommon().addEventType(SalusEnrichedMetric.class);
-    EPRuntime runtime = EPRuntimeProvider.getDefaultRuntime(configuration);
-
+  public void testEntryWindow() throws EPUndeployException {
+    // we do not want to test anything beyond entry window so we can remove the connecting queries
+    esperEngine.undeploy("stateCountTableLogic");
+    esperEngine.undeploy("stateCountSatisfiedLogic");
     SalusEnrichedMetric metric = createSalusEnrichedMetric();
-    EsperEngine.compileAndDeployQuery(runtime, configuration, getBasicInsertQuery(metric));
+    esperEngine.compileAndDeployQuery(getBasicInsertQuery(metric));
 
-    EPStatement stmt = EsperEngine.compileAndDeployQuery(runtime, configuration,
+    EPStatement stmt = esperEngine.compileAndDeployQuery(
         "@Audit select * from EntryWindow");
     SupportUpdateListener listener = new SupportUpdateListener();
     stmt.addListener(listener);
 
-    runtime.getEventService().sendEventBean(metric, SalusEnrichedMetric.class.getSimpleName());
+    esperEngine.sendMetric(metric);
 
     EPAssertionUtil.assertProps(listener.assertOneGetNewAndReset(),
         new String[]{"tenantId", "monitorId", "state"},
@@ -88,18 +105,16 @@ public class EsperQueryTest {
    * Verify the tracked state counts are updated correctly upon seeing various events.
    */
   @Test
-  public void testUpdateStateCountTable() {
-    Configuration configuration = new Configuration();
-    configuration.getCommon().addEventType(SalusEnrichedMetric.class);
-    EPRuntime runtime = EPRuntimeProvider.getDefaultRuntime(configuration);
+  public void testUpdateStateCountTable() throws EPUndeployException {
+    // we do not want to test anything beyond state count logic so we can remove the connecting queries
+    esperEngine.undeploy("stateCountSatisfiedLogic");
 
     SalusEnrichedMetric metric = createSalusEnrichedMetric();
-    EsperEngine.compileAndDeployQuery(runtime, configuration, getBasicInsertQuery(metric));
+    esperEngine.compileAndDeployQuery(getBasicInsertQuery(metric));
 
-    runtime.getEventService().sendEventBean(metric, SalusEnrichedMetric.class.getSimpleName());
+    esperEngine.sendMetric(metric);
     // tables do not emit events on select so an on demand query is used instead
-    EPFireAndForgetQueryResult result = EsperEngine.runOnDemandQuery(runtime, configuration,
-        "@Audit select * from StateCountTable");
+    EPFireAndForgetQueryResult result = esperEngine.runOnDemandQuery("@Audit select * from StateCountTable");
 
     assertThat(result.getArray()).hasSize(1);
     EPAssertionUtil.assertProps(result.getArray()[0],
@@ -108,9 +123,8 @@ public class EsperQueryTest {
             metric.getZoneId(), metric.getState(), 1});
 
     // sending another of the same metric increases the count
-    runtime.getEventService().sendEventBean(metric, SalusEnrichedMetric.class.getSimpleName());
-    result = EsperEngine.runOnDemandQuery(runtime, configuration,
-        "@Audit select * from StateCountTable");
+    esperEngine.sendMetric(metric);
+    result = esperEngine.runOnDemandQuery("@Audit select * from StateCountTable");
     assertThat(result.getArray()).hasSize(1);
     EPAssertionUtil.assertProps(result.getArray()[0],
         new String[]{"tenantId", "resourceId", "monitorId", "taskId", "zoneId", "state", "currentCount"},
@@ -119,11 +133,10 @@ public class EsperQueryTest {
 
     // sending a different taskId adds a new state count key
     SalusEnrichedMetric newMetric = createSalusEnrichedMetric();;
-    EsperEngine.compileAndDeployQuery(runtime, configuration, getBasicInsertQuery(newMetric));
+    esperEngine.compileAndDeployQuery(getBasicInsertQuery(newMetric));
 
-    runtime.getEventService().sendEventBean(newMetric, SalusEnrichedMetric.class.getSimpleName());
-    result = EsperEngine.runOnDemandQuery(runtime, configuration,
-        "@Audit select * from StateCountTable");
+    esperEngine.sendMetric(newMetric);
+    result = esperEngine.runOnDemandQuery("@Audit select * from StateCountTable");
     assertThat(result.getArray()).hasSize(2);
     EPAssertionUtil.assertPropsPerRowAnyOrder(result.getArray(),
         new String[]{"tenantId", "resourceId", "monitorId", "taskId", "zoneId", "state", "currentCount"},
@@ -131,12 +144,11 @@ public class EsperQueryTest {
             {metric.getTenantId(), metric.getResourceId(), metric.getMonitorId(), metric.getTaskId(),
                 metric.getZoneId(), metric.getState(), 2},
             {newMetric.getTenantId(), newMetric.getResourceId(), newMetric.getMonitorId(), newMetric.getTaskId(),
-            newMetric.getZoneId(), newMetric.getState(), 1}});
+                newMetric.getZoneId(), newMetric.getState(), 1}});
 
     // sending the original metric but with a different state resets it to 1
-    runtime.getEventService().sendEventBean(metric.setState("ok"), SalusEnrichedMetric.class.getSimpleName());
-    result = EsperEngine.runOnDemandQuery(runtime, configuration,
-        "@Audit select * from StateCountTable");
+    esperEngine.sendMetric(metric.setState("one"));
+    result = esperEngine.runOnDemandQuery("@Audit select * from StateCountTable");
     assertThat(result.getArray()).hasSize(2);
     EPAssertionUtil.assertPropsPerRowAnyOrder(result.getArray(),
         new String[]{"tenantId", "resourceId", "monitorId", "taskId", "zoneId", "state", "currentCount"},
@@ -153,23 +165,22 @@ public class EsperQueryTest {
    * count has been observed.
    */
   @Test
-  public void testUpdateStateCountSatisfiedWindow() {
-    Configuration configuration = new Configuration();
-    configuration.getCommon().addEventType(SalusEnrichedMetric.class);
-    EPRuntime runtime = EPRuntimeProvider.getDefaultRuntime(configuration);
+  public void testUpdateStateCountSatisfiedWindow() throws EPUndeployException {
+    // we do not want to test anything beyond state count logic so we can remove the connecting queries
+    esperEngine.undeploy("quorumStateLogic");
 
     SalusEnrichedMetric metric = createSalusEnrichedMetric();
-    EsperEngine.compileAndDeployQuery(runtime, configuration, getBasicInsertQuery(metric));
+    esperEngine.compileAndDeployQuery(getBasicInsertQuery(metric));
 
-    EPStatement stmt = EsperEngine.compileAndDeployQuery(runtime, configuration,
+    EPStatement stmt = esperEngine.compileAndDeployQuery(
         "@Audit select * from StateCountSatisfiedWindow");
     SupportUpdateListener listener = new SupportUpdateListener();
     stmt.addListener(listener);
 
     // the event will not enter the window until the state count has been satisfied
-    runtime.getEventService().sendEventBean(metric, SalusEnrichedMetric.class.getSimpleName());
+    esperEngine.sendMetric(metric);
     listener.assertNotInvoked();
-    runtime.getEventService().sendEventBean(metric, SalusEnrichedMetric.class.getSimpleName());
+    esperEngine.sendMetric(metric);
 
     EPAssertionUtil.assertProps(listener.assertOneGetNewAndReset(),
         new String[]{"tenantId", "resourceId", "monitorId", "taskId", "zoneId", "state"},
@@ -179,8 +190,8 @@ public class EsperQueryTest {
 
   private SalusEnrichedMetric createSalusEnrichedMetric() {
     String resourceId = RandomStringUtils.randomAlphabetic(5);
-    String monitorId = RandomStringUtils.randomAlphabetic(5);
-    String taskId = RandomStringUtils.randomAlphabetic(5);
+    UUID monitorId = UUID.randomUUID();
+    UUID taskId = UUID.randomUUID();
     String zoneId = RandomStringUtils.randomAlphabetic(5);
     String monitorType = RandomStringUtils.randomAlphabetic(5);
     String monitorSelectorScope = RandomStringUtils.randomAlphabetic(5);
@@ -193,11 +204,13 @@ public class EsperQueryTest {
         .setTaskId(taskId)
         .setZoneId(zoneId)
         .setMonitorType(monitorType)
-        .setState("critical")
+        .setState("original")
+        .setStateEvaluationTimestamp(Instant.now())
         .setExpectedStateCounts(Map.of(
-            "test", 1,
-            "critical", 2,
-            "ok", 3
+            "one", 1,
+            "two", 2,
+            "three", 3,
+            "original", 2
         ))
         .setMonitorSelectorScope(monitorSelectorScope)
         .setMonitoringSystem("Salus")
@@ -231,5 +244,4 @@ public class EsperQueryTest {
         metric.getMonitorSelectorScope(),
         metric.getMonitorType());
   }
-
 }

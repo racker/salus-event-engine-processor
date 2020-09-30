@@ -18,6 +18,7 @@ package com.rackspace.salus.event.processor.services;
 
 import com.rackspace.monplat.protocol.UniversalMetricFrame;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -66,7 +67,8 @@ public class UniversalMetricHandler {
     String deviceDc = metric.getDeviceMetadataOrDefault(SALUS_DEVICE_DC_KEY, UNKNOWN_VALUE);
 
     String resourceId = metric.getSystemMetadataOrThrow(SALUS_RESOURCE_ID_KEY);
-    String monitorId = metric.getSystemMetadataOrThrow(SALUS_MONITOR_ID_KEY);
+    UUID monitorId = UUID.fromString(
+        metric.getSystemMetadataOrThrow(SALUS_MONITOR_ID_KEY));
     // default to agent "zone" if no public zone is set
     String zoneId = metric.getSystemMetadataOrDefault(SALUS_ZONE_ID_KEY, SALUS_ZONE_ID_DEFAULT); // TODO: confirm zoneId is null for agents
     String monitorType = metric.getSystemMetadataOrThrow(SALUS_MONITOR_TYPE); // TODO: might need to get this from the metric group instead of system metadata?  Potential that we will receive lists of different metric types in future

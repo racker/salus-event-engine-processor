@@ -20,14 +20,15 @@ import com.espertech.esper.common.client.EventBean;
 import com.espertech.esper.runtime.client.EPRuntime;
 import com.espertech.esper.runtime.client.EPStatement;
 import com.espertech.esper.runtime.client.UpdateListener;
+import com.rackspace.salus.common.config.MetricNames;
 import com.rackspace.salus.common.config.MetricTags;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
-import com.rackspace.salus.event.processor.services.EsperEventsHandler;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
-import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -38,15 +39,21 @@ public class EsperEventsListener implements UpdateListener {
 
   private EsperEventsHandler handler;
   private MeterRegistry meterRegistry;
-  private Counter unexpectedEsperEvents;
+  private Counter unexpectedEsperEventType;
+  private Counter unexpectedEsperEventForZone;
 
   @Autowired
   public EsperEventsListener(EsperEventsHandler handler, MeterRegistry meterRegistry) {
     this.handler = handler;
     this.meterRegistry = meterRegistry;
 
-    unexpectedEsperEvents = meterRegistry.counter("unexpected_esper_metrics",
-        MetricTags.SERVICE_METRIC_TAG, "EsperEventListener");
+    unexpectedEsperEventType = meterRegistry.counter(MetricNames.SILENT_ERRORS,
+        MetricTags.SERVICE_METRIC_TAG, "EsperEventListener",
+        MetricTags.REASON, "unexpected_esper_event_type");
+
+    unexpectedEsperEventForZone = meterRegistry.counter(MetricNames.SILENT_ERRORS,
+        MetricTags.SERVICE_METRIC_TAG, "EsperEventListener",
+        MetricTags.REASON, "duplicate_zones_in_insert_stream");
   }
 
   /**
@@ -60,19 +67,32 @@ public class EsperEventsListener implements UpdateListener {
   public void update(EventBean[] insertStream, EventBean[] removeStream, EPStatement epStatement,
       EPRuntime epRuntime) {
     log.debug("Received {} state change events from esper", insertStream.length);
-    List<SalusEnrichedMetric> events = Arrays.asList(insertStream).stream()
-        .map(event -> {
-          if (event.getUnderlying() instanceof SalusEnrichedMetric) {
-            return (SalusEnrichedMetric) event.getUnderlying();
-          }
-          log.error("Received unexpected event type={} from esper",
-              event.getUnderlying().getClass().getSimpleName());
-          unexpectedEsperEvents.increment();
-          return null;
-        })
-        .collect(Collectors.toList());
 
-    handler.processEsperEvents(events);
+    List<SalusEnrichedMetric> salusEvents = new ArrayList<>();
+    Set<String> seenZones = new HashSet<>();
+
+
+    for (EventBean event : insertStream) {
+      if (event.getUnderlying() instanceof SalusEnrichedMetric) {
+        SalusEnrichedMetric salusEvent = (SalusEnrichedMetric) event.getUnderlying();
+
+        // only use one event per zone
+        // the esper query should not allow for multiple
+        if (seenZones.add(salusEvent.getZoneId())) {
+          salusEvents.add(salusEvent);
+        } else {
+          log.error("Multiple events of zone={} were seen in insertStream for event={}",
+              salusEvent.getZoneId(), salusEvent);
+          unexpectedEsperEventForZone.increment();
+        }
+      } else {
+        log.error("Received unexpected event type={} from esper",
+            event.getUnderlying().getClass().getSimpleName());
+        unexpectedEsperEventType.increment();
+      }
+    }
+
+    handler.processEsperEvents(salusEvents);
 
   }
 }

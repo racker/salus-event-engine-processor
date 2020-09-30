@@ -19,6 +19,7 @@ package com.rackspace.salus.event.processor.services;
 import static com.rackspace.salus.telemetry.messaging.KafkaMessageKeyBuilder.buildMessageKey;
 
 import com.rackspace.salus.common.messaging.KafkaTopicProperties;
+import com.rackspace.salus.telemetry.entities.StateChange;
 import com.rackspace.salus.telemetry.messaging.StateChangeEvent;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -41,7 +42,18 @@ public class EventProducer {
     this.kafkaTopics = kafkaTopics;
   }
 
-  ListenableFuture<SendResult<String, Object>> sendStateChange(StateChangeEvent event) {
+  ListenableFuture<SendResult<String, Object>> sendStateChange(StateChange stateChange) {
+    StateChangeEvent event = new StateChangeEvent()
+        .setId(stateChange.getId())
+        .setTenantId(stateChange.getTenantId())
+        .setResourceId(stateChange.getResourceId())
+        .setMonitorId(stateChange.getMonitorId())
+        .setTaskId(stateChange.getTaskId())
+        .setState(stateChange.getState())
+        .setMessage(stateChange.getMessage())
+        .setEvaluationTimestamp(stateChange.getEvaluationTimestamp())
+        .setContributingEvents(stateChange.getContributingEvents());
+
     return kafkaTemplate.send(
         kafkaTopics.getStateChangeEvents(),
         buildMessageKey(event),

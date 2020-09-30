@@ -21,7 +21,6 @@ import static com.rackspace.salus.event.processor.config.CacheConfig.MONITOR_INT
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rackspace.salus.common.config.MetricTags;
-import com.rackspace.salus.event.processor.model.EventState;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
 import com.rackspace.salus.telemetry.entities.Monitor;
 import com.rackspace.salus.telemetry.entities.StateChange;
@@ -33,10 +32,8 @@ import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Map.Entry;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,14 +50,16 @@ public class EsperEventsHandler {
   private final MonitorRepository monitorRepository;
 
   private final MeterRegistry meterRegistry;
-
   private final ObjectMapper objectMapper;
+
+  private final EventProducer eventProducer;
   private final TaskWarmthTracker taskWarmthTracker;
-  private Map<String/*eventId*/, EventState> eventStates = new ConcurrentHashMap<>();
+
+
+
   private static final Duration DEFAULT_METRIC_WINDOW = Duration.ofMinutes(30);
   private static final double METRIC_WINDOW_MULTIPLIER = 1.5;
 
-  private final String appName;
   private final Counter.Builder eventProcessingAnomalies;
 
   @Autowired
@@ -69,6 +68,7 @@ public class EsperEventsHandler {
       StateChangeRepository stateChangeRepository,
       MonitorRepository monitorRepository,
       MeterRegistry meterRegistry, ObjectMapper objectMapper,
+      EventProducer eventProducer,
       TaskWarmthTracker taskWarmthTracker,
       @Value("${spring.application.name}") String appName) {
     this.boundMonitorRepository = boundMonitorRepository;
@@ -76,15 +76,21 @@ public class EsperEventsHandler {
     this.monitorRepository = monitorRepository;
     this.meterRegistry = meterRegistry;
     this.objectMapper = objectMapper;
+    this.eventProducer = eventProducer;
     this.taskWarmthTracker = taskWarmthTracker;
-    this.appName = appName;
 
     eventProcessingAnomalies = Counter.builder("event_processing_anomaly")
         .tag(MetricTags.SERVICE_METRIC_TAG, appName);
   }
 
   public void processEsperEvents(List<SalusEnrichedMetric> metricsWithState) {
-    assert(metricsWithState.size() > 0);
+    if (metricsWithState.size() == 0) {
+      log.warn("Unable to process empty metrics list");
+      eventProcessingAnomalies.tags(MetricTags.OPERATION_METRIC_TAG, "processEsperEvents",
+          MetricTags.REASON, "empty_metrics_list")
+          .register(meterRegistry).increment();
+      return;
+    }
 
     String tenantId = metricsWithState.get(0).getTenantId();
     String resourceId = metricsWithState.get(0).getResourceId();
@@ -118,10 +124,12 @@ public class EsperEventsHandler {
   private void handleStateChange(List<SalusEnrichedMetric> contributingEvents, String newState, String oldState) {
     // TODO: complete
 
-    StateChange stateChange = generateStateChange(newState, contributingEvents);
+    StateChange stateChange = generateStateChange(newState, oldState, contributingEvents);
 
     // add method that updates the previousState cache when this is saved
     stateChange = stateChangeRepository.save(stateChange);
+
+    eventProducer.sendStateChange(stateChange);
 
     // send state change event to kafka
   }
@@ -225,7 +233,7 @@ public class EsperEventsHandler {
               + "Monitor configured in {} zones but saw {} events for task={}",
           expectedEventCount, contributingEvents.size(), metric.getCompositeKey());
       eventProcessingAnomalies.tags(MetricTags.OPERATION_METRIC_TAG, "isTaskWarm",
-          "reason", "more_events_than_zones")
+          MetricTags.REASON, "more_events_than_zones")
           .register(meterRegistry).increment();
       return true;
     } else if ((warmth = taskWarmthTracker.getTaskWarmth(metric)) > expectedEventCount) {
@@ -234,7 +242,7 @@ public class EsperEventsHandler {
               + "Monitor configured in {} zones but saw {} events for task={}",
           warmth, expectedEventCount, contributingEvents.size(), metric.getCompositeKey());
       eventProcessingAnomalies.tags(MetricTags.OPERATION_METRIC_TAG, "isTaskWarm",
-          "reason", "less_events_than_zones")
+          MetricTags.REASON, "less_events_than_zones")
           .register(meterRegistry).increment();
       return true;
     } else {
@@ -258,23 +266,25 @@ public class EsperEventsHandler {
    *
    * @return The previous state if one exists, otherwise null.
    */
+  // @Cacheable
+  // TODO add this
   private String getPreviousKnownState(String tenantId, String resourceId, UUID monitorId, UUID taskId) {
     return stateChangeRepository.findFirstByTenantIdAndResourceIdAndMonitorIdAndTaskId(
         tenantId, resourceId, monitorId, taskId)
         .map(StateChange::getState).orElse(null);
   }
 
-  private StateChange generateStateChange(String state, List<SalusEnrichedMetric> contributingEvents) {
+  private StateChange generateStateChange(String state, String prevState, List<SalusEnrichedMetric> contributingEvents) {
     SalusEnrichedMetric event = contributingEvents.get(0);
     return new StateChange()
-        .setState(state)
-        .setMessage(null)
-        .setEvaluationTimestamp(Instant.now())
         .setTenantId(event.getTenantId())
         .setResourceId(event.getResourceId())
         .setMonitorId(event.getMonitorId())
         .setTaskId(event.getTaskId())
-        .setPreviousState(null)
+        .setState(state)
+        .setPreviousState(prevState)
+        .setMessage(null)
+        .setEvaluationTimestamp(Instant.now())
         .setContributingEvents(contributingEvents.toString());
   }
 }

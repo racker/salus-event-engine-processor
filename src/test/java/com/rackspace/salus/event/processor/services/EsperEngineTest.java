@@ -16,6 +16,7 @@
 
 package com.rackspace.salus.event.processor.services;
 
+import static com.rackspace.salus.event.processor.utils.TestDataGenerators.createSalusEnrichedMetric;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.espertech.esper.common.client.fireandforget.EPFireAndForgetQueryResult;
@@ -29,11 +30,6 @@ import com.rackspace.salus.telemetry.repositories.BoundMonitorRepository;
 import com.rackspace.salus.telemetry.repositories.MonitorRepository;
 import com.rackspace.salus.telemetry.repositories.StateChangeRepository;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.time.Instant;
-import java.util.Collections;
-import java.util.Map;
-import java.util.UUID;
-import org.apache.commons.lang.RandomStringUtils;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -162,10 +158,7 @@ public class EsperEngineTest {
    * count has been observed.
    */
   @Test
-  public void testUpdateStateCountSatisfiedWindow() throws EPUndeployException {
-    // we do not want to test anything beyond state count logic so we can remove the connecting queries
-    esperEngine.undeploy("quorumStateLogic");
-
+  public void testUpdateStateCountSatisfiedWindow() {
     SalusEnrichedMetric metric = createSalusEnrichedMetric();
     esperEngine.compileAndDeployQuery(getBasicInsertQuery(metric));
 
@@ -183,41 +176,6 @@ public class EsperEngineTest {
         new String[]{"tenantId", "resourceId", "monitorId", "taskId", "zoneId", "state"},
         new Object[]{metric.getTenantId(), metric.getResourceId(), metric.getMonitorId(), metric.getTaskId(),
             metric.getZoneId(), metric.getState()});
-  }
-
-  private SalusEnrichedMetric createSalusEnrichedMetric() {
-    String resourceId = RandomStringUtils.randomAlphabetic(5);
-    UUID monitorId = UUID.randomUUID();
-    UUID taskId = UUID.randomUUID();
-    String zoneId = RandomStringUtils.randomAlphabetic(5);
-    String monitorType = RandomStringUtils.randomAlphabetic(5);
-    String monitorSelectorScope = RandomStringUtils.randomAlphabetic(5);
-    String tenantId = RandomStringUtils.randomAlphabetic(5);
-    String accountType = RandomStringUtils.randomAlphabetic(5);
-
-    return (SalusEnrichedMetric) new SalusEnrichedMetric()
-        .setResourceId(resourceId)
-        .setMonitorId(monitorId)
-        .setTaskId(taskId)
-        .setZoneId(zoneId)
-        .setMonitorType(monitorType)
-        .setState("original")
-        .setStateEvaluationTimestamp(Instant.now())
-        .setExpectedStateCounts(Map.of(
-            "one", 1,
-            "two", 2,
-            "three", 3,
-            "original", 2
-        ))
-        .setMonitorSelectorScope(monitorSelectorScope)
-        .setMonitoringSystem("Salus")
-        .setTenantId(tenantId)
-        .setAccountType(accountType)
-        .setMetrics(Collections.emptyList())
-        .setTags(Map.of(
-            "os", "linux",
-            "dc", "private"
-        ));
   }
 
   /**

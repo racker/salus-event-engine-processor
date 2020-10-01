@@ -25,13 +25,12 @@ import lombok.extern.slf4j.Slf4j;
 public class StateEvaluator {
 
   // TODO use metric timestamps instead of getStateEvaluationTimestamp ?
-
+  // TODO taskId is required as a method parameter
   public static SalusEnrichedMetric generateEnrichedMetric(SalusEnrichedMetric metric, String state, Map<String, Integer> stateCounts) {
     return metric
         .setState(state)
         .setExpectedStateCounts(stateCounts)
         .setStateEvaluationTimestamp(Instant.now());
-//        .setTaskId(); this should come from a method param?
   }
 
 }

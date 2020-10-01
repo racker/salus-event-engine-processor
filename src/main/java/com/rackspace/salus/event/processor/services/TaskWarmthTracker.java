@@ -36,7 +36,7 @@ public class TaskWarmthTracker implements Serializable {
     this.warmingTasks = new ConcurrentHashMap<>();
   }
 
-  //TODO: Update this to accept a monitor event instead of string
+  //TODO: Update this to accept a monitor change event instead of string
   public void resetWarmthForTask(String monitorEvent) {
     AtomicInteger warmth = warmingTasks.get(monitorEvent);
 

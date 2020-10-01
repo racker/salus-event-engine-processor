@@ -184,9 +184,6 @@ public class EsperEventsHandler {
    * This is required to handle new tasks that are still "warming up" and for any service restarts
    * where previous state has been lost.
    *
-   * Once an event is classed as warm it will remain that way until a service restart occurs.
-   * TODO: add this logic back in?  Track via a map in warmthTracker?  monitor/task updates should reset warmth?
-   *
    * @param contributingEvents The "recent" observed events for each zone relating to this task event.
    * @return True if the enough events have been seen, otherwise false.
    */

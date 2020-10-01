@@ -14,16 +14,18 @@
  * limitations under the License.
  */
 
-package com.rackspace.salus.event.processor.services;
+package com.rackspace.salus.event.processor.caching;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
+import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
 import com.rackspace.salus.telemetry.entities.Monitor;
+import com.rackspace.salus.telemetry.entities.StateChange;
 import com.rackspace.salus.telemetry.repositories.BoundMonitorRepository;
 import com.rackspace.salus.telemetry.repositories.MonitorRepository;
 import com.rackspace.salus.telemetry.repositories.StateChangeRepository;
@@ -39,6 +41,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.junit4.SpringRunner;
 import org.testcontainers.shaded.org.apache.commons.lang.RandomStringUtils;
+import uk.co.jemos.podam.api.PodamFactory;
+import uk.co.jemos.podam.api.PodamFactoryImpl;
 
 @RunWith(SpringRunner.class)
 @SpringBootTest(classes = {CachedRepositoryRequests.class})
@@ -57,6 +61,8 @@ public class CachedRepositoryRequestsTest {
   @MockBean
   StateChangeRepository stateChangeRepository;
 
+  final PodamFactory podamFactory = new PodamFactoryImpl();
+
 
   @Test
   public void getMonitorIntervalTest() {
@@ -69,14 +75,73 @@ public class CachedRepositoryRequestsTest {
 
     Duration interval = repositoryRequests.getMonitorInterval(tenantId, monitorId);
 
+    // first request triggers a db lookup
+    verify(monitorRepository).findByIdAndTenantId(monitorId, tenantId);
     assertThat(interval).isEqualTo(Duration.ofMinutes(1));
-    verify(monitorRepository)
-        .findByIdAndTenantId(monitorId, tenantId);
 
     interval = repositoryRequests.getMonitorInterval(tenantId, monitorId);
-    assertThat(interval).isEqualTo(Duration.ofMinutes(1));
+
     // no db lookup on subsequent requests.
-    verifyNoInteractions(monitorRepository);
+    verifyNoMoreInteractions(monitorRepository);
+    assertThat(interval).isEqualTo(Duration.ofMinutes(1));
+  }
+
+  @Test
+  public void getExpectedEventCountForMonitorTest() {
+    when(boundMonitorRepository.countAllByResourceIdAndMonitor_IdAndMonitor_TenantId(
+        anyString(), any(), anyString()))
+        .thenReturn(3);
+
+    final SalusEnrichedMetric metric = podamFactory.manufacturePojo(SalusEnrichedMetric.class);
+
+    int expectedCount = repositoryRequests.getExpectedEventCountForMonitor(metric);
+
+    // first request triggers a db lookup
+    verify(boundMonitorRepository).countAllByResourceIdAndMonitor_IdAndMonitor_TenantId(
+        metric.getResourceId(), metric.getMonitorId(), metric.getTenantId());
+    assertThat(expectedCount).isEqualTo(3);
+
+    expectedCount = repositoryRequests.getExpectedEventCountForMonitor(metric);
+
+    // no db lookup on subsequent requests.
+    verifyNoMoreInteractions(boundMonitorRepository);
+    assertThat(expectedCount).isEqualTo(3);
+  }
+
+  @Test
+  public void getPreviousKnownStateTest() {
+    final StateChange stateChange = podamFactory.manufacturePojo(StateChange.class);
+
+    when(stateChangeRepository.findFirstByTenantIdAndResourceIdAndMonitorIdAndTaskId(
+        anyString(), anyString(), any(), any()))
+        .thenReturn(Optional.of(stateChange));
+
+    String state = repositoryRequests.getPreviousKnownState(
+        stateChange.getTenantId(),
+        stateChange.getResourceId(),
+        stateChange.getMonitorId(),
+        stateChange.getTaskId());
+
+    // first request triggers a db lookup
+    verify(stateChangeRepository).findFirstByTenantIdAndResourceIdAndMonitorIdAndTaskId(
+        stateChange.getTenantId(),
+        stateChange.getResourceId(),
+        stateChange.getMonitorId(),
+        stateChange.getTaskId()
+    );
+    assertThat(state).isEqualTo(stateChange.getState());
+
+    state = repositoryRequests.getPreviousKnownState(
+        stateChange.getTenantId(),
+        stateChange.getResourceId(),
+        stateChange.getMonitorId(),
+        stateChange.getTaskId());
+
+    // no db lookup on subsequent requests.
+    verifyNoMoreInteractions(stateChangeRepository);
+    assertThat(state).isEqualTo(stateChange.getState());
+
+
   }
 
 

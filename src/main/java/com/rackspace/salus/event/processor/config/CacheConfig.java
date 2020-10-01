@@ -17,7 +17,6 @@
 package com.rackspace.salus.event.processor.config;
 
 import org.ehcache.config.builders.CacheConfigurationBuilder;
-import org.ehcache.config.builders.ExpiryPolicyBuilder;
 import org.ehcache.config.builders.ResourcePoolsBuilder;
 import org.ehcache.jsr107.Eh107Configuration;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,6 +33,7 @@ public class CacheConfig {
 
   public static final String EXPECTED_EVENT_COUNTS = "event-counts";
   public static final String MONITOR_INTERVALS = "monitor-intervals";
+  public static final String STATE_HISTORY = "state-history";
 
   private final CacheProperties properties;
 
@@ -47,6 +47,7 @@ public class CacheConfig {
     return cacheManager -> {
       cacheManager.createCache(EXPECTED_EVENT_COUNTS, repositoryCacheConfig());
       cacheManager.createCache(MONITOR_INTERVALS, repositoryCacheConfig());
+      cacheManager.createCache(STATE_HISTORY, repositoryCacheConfig());
     };
   }
 
@@ -55,7 +56,6 @@ public class CacheConfig {
         CacheConfigurationBuilder.newCacheConfigurationBuilder(Object.class, Object.class,
             ResourcePoolsBuilder.heap(properties.getMaxSize())
         )
-            .withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(properties.getTtl()))
     );
   }
 }

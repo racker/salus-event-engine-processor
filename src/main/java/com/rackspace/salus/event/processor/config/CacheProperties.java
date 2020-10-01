@@ -16,17 +16,24 @@
 
 package com.rackspace.salus.event.processor.config;
 
-import java.time.Duration;
-import java.time.temporal.ChronoUnit;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.boot.convert.DurationUnit;
 
 @Data
 @ConfigurationProperties("salus.event-processor.cache")
 public class CacheProperties {
+   /*
+    * This value needs to be large enough to hold keys for each of these scenarios:
+    *
+    * 1. All monitors an event-processor may process metrics for
+    * 2. All monitors per resource per tenant an event-processor may process metrics for
+    * 3. All tasks per monitor per resource per tenant an event-processor may handle state changes for
+    *
+    * Therefore the 3rd scenario is the one that really dictates this value.
+    */
   long maxSize = 2_000;
 
-  @DurationUnit(ChronoUnit.MINUTES)
-  Duration ttl = Duration.ofMinutes(10);
+  // TODO : is it better to set three different cache configurations instead of using the max heap
+  // value for all of them?
+
 }

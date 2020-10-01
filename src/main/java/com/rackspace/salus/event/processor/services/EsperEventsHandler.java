@@ -16,17 +16,11 @@
 
 package com.rackspace.salus.event.processor.services;
 
-import static com.rackspace.salus.event.processor.config.CacheConfig.EXPECTED_EVENT_COUNTS;
-import static com.rackspace.salus.event.processor.config.CacheConfig.MONITOR_INTERVALS;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rackspace.salus.common.config.MetricTags;
+import com.rackspace.salus.event.processor.caching.CachedRepositoryRequests;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
-import com.rackspace.salus.telemetry.entities.Monitor;
 import com.rackspace.salus.telemetry.entities.StateChange;
-import com.rackspace.salus.telemetry.repositories.BoundMonitorRepository;
-import com.rackspace.salus.telemetry.repositories.MonitorRepository;
-import com.rackspace.salus.telemetry.repositories.StateChangeRepository;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
@@ -38,42 +32,31 @@ import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 @Slf4j
 @Service
 public class EsperEventsHandler {
-
-  private final BoundMonitorRepository boundMonitorRepository;
-  private final StateChangeRepository stateChangeRepository;
-  private final MonitorRepository monitorRepository;
-
   private final MeterRegistry meterRegistry;
   private final ObjectMapper objectMapper;
 
+  private final CachedRepositoryRequests repositoryRequests;
   private final EventProducer eventProducer;
   private final TaskWarmthTracker taskWarmthTracker;
 
 
-
-  private static final Duration DEFAULT_METRIC_WINDOW = Duration.ofMinutes(30);
   private static final double METRIC_WINDOW_MULTIPLIER = 1.5;
 
   private final Counter.Builder eventProcessingAnomalies;
 
   @Autowired
   public EsperEventsHandler(
-      BoundMonitorRepository boundMonitorRepository,
-      StateChangeRepository stateChangeRepository,
-      MonitorRepository monitorRepository,
       MeterRegistry meterRegistry, ObjectMapper objectMapper,
+      CachedRepositoryRequests repositoryRequests,
       EventProducer eventProducer,
       TaskWarmthTracker taskWarmthTracker,
       @Value("${spring.application.name}") String appName) {
-    this.boundMonitorRepository = boundMonitorRepository;
-    this.stateChangeRepository = stateChangeRepository;
-    this.monitorRepository = monitorRepository;
+    this.repositoryRequests = repositoryRequests;
     this.meterRegistry = meterRegistry;
     this.objectMapper = objectMapper;
     this.eventProducer = eventProducer;
@@ -84,7 +67,7 @@ public class EsperEventsHandler {
   }
 
   public void processEsperEvents(List<SalusEnrichedMetric> metricsWithState) {
-    if (metricsWithState.size() == 0) {
+    if (metricsWithState.isEmpty()) {
       log.warn("Unable to process empty metrics list");
       eventProcessingAnomalies.tags(MetricTags.OPERATION_METRIC_TAG, "processEsperEvents",
           MetricTags.REASON, "empty_metrics_list")
@@ -111,7 +94,7 @@ public class EsperEventsHandler {
       return;
     }
 
-    String oldState = getPreviousKnownState(tenantId, resourceId, monitorId, taskId);
+    String oldState = repositoryRequests.getPreviousKnownState(tenantId, resourceId, monitorId, taskId);
     if (newState.equals(oldState)) {
       log.debug("Task={} state={} is unchanged", compositeKey, newState);
       return;
@@ -122,16 +105,9 @@ public class EsperEventsHandler {
   }
 
   private void handleStateChange(List<SalusEnrichedMetric> contributingEvents, String newState, String oldState) {
-    // TODO: complete
-
     StateChange stateChange = generateStateChange(newState, oldState, contributingEvents);
-
-    // add method that updates the previousState cache when this is saved
-    stateChange = stateChangeRepository.save(stateChange);
-
+    stateChange = repositoryRequests.saveAndCacheStateChange(stateChange);
     eventProducer.sendStateChange(stateChange);
-
-    // send state change event to kafka
   }
 
   /**
@@ -192,18 +168,13 @@ public class EsperEventsHandler {
         .max(Instant::compareTo)
         .orElseGet(Instant::now);
 
-    Duration interval = getMonitorInterval(metrics.get(0).getTenantId(), metrics.get(0).getMonitorId());
+    Duration interval = repositoryRequests.getMonitorInterval(metrics.get(0).getTenantId(), metrics.get(0).getMonitorId());
     long windowSeconds = (long) (interval.toSeconds() * METRIC_WINDOW_MULTIPLIER);
 
     return newestDate.minusSeconds(windowSeconds);
   }
 
-  @Cacheable(cacheNames = MONITOR_INTERVALS, key = "{#tenantId, #monitorId}")
-  public Duration getMonitorInterval(String tenantId, UUID monitorId) {
-    return monitorRepository.findByIdAndTenantId(monitorId, tenantId)
-        .map(Monitor::getInterval)
-        .orElse(DEFAULT_METRIC_WINDOW);
-  }
+
 
   /**
    * Validates enough events have been received to confidently evaluate a valid state.
@@ -223,7 +194,7 @@ public class EsperEventsHandler {
     SalusEnrichedMetric metric = contributingEvents.get(0);
 
     int warmth;
-    int expectedEventCount = getExpectedEventCountForMonitor(metric);
+    int expectedEventCount = repositoryRequests.getExpectedEventCountForMonitor(metric);
 
     if (contributingEvents.size() == expectedEventCount) {
       log.debug("Setting task={} as warm", metric);
@@ -250,28 +221,6 @@ public class EsperEventsHandler {
           expectedEventCount, contributingEvents.size(), metric.getCompositeKey());
       return false;
     }
-  }
-
-  @Cacheable(cacheNames = EXPECTED_EVENT_COUNTS,
-      key = "{#metric.tenantId, #metric.resourceId, #metric.monitorId}")
-  public int getExpectedEventCountForMonitor(SalusEnrichedMetric metric) {
-    return boundMonitorRepository.countAllByResourceIdAndMonitor_IdAndMonitor_TenantId(
-        metric.getResourceId(),
-        metric.getMonitorId(),
-        metric.getTenantId());
-  }
-
-  /**
-   * Retrieve the last stored state for a task.
-   *
-   * @return The previous state if one exists, otherwise null.
-   */
-  // @Cacheable
-  // TODO add this
-  private String getPreviousKnownState(String tenantId, String resourceId, UUID monitorId, UUID taskId) {
-    return stateChangeRepository.findFirstByTenantIdAndResourceIdAndMonitorIdAndTaskId(
-        tenantId, resourceId, monitorId, taskId)
-        .map(StateChange::getState).orElse(null);
   }
 
   private StateChange generateStateChange(String state, String prevState, List<SalusEnrichedMetric> contributingEvents) {

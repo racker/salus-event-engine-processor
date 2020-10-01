@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.rackspace.salus.event.processor.config;
+package com.rackspace.salus.event.processor.engine;
 
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
 

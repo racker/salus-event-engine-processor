@@ -160,7 +160,6 @@ public class EsperEngine {
     runtime.getDeploymentService().undeployAll();
   }
 
-  // TODO: verify this sends `SalusEnrichedMetric` and not `EnrichedMetric`
   void sendMetric(EnrichedMetric metric) {
     log.trace("Sending metric to esper engine, {}", metric);
     runtime.getEventService().sendEventBean(metric, metric.getClass().getSimpleName());

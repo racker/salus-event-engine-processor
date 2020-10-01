@@ -25,10 +25,8 @@ import com.espertech.esper.runtime.client.EPStatement;
 import com.espertech.esper.runtime.client.EPUndeployException;
 import com.espertech.esper.runtime.client.scopetest.SupportUpdateListener;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.rackspace.salus.event.processor.caching.CachedRepositoryRequests;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
-import com.rackspace.salus.telemetry.repositories.BoundMonitorRepository;
-import com.rackspace.salus.telemetry.repositories.MonitorRepository;
-import com.rackspace.salus.telemetry.repositories.StateChangeRepository;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.After;
 import org.junit.Before;
@@ -56,14 +54,10 @@ public class EsperEngineTest {
   EsperEventsHandler eventsHandler;
 
   @MockBean
-  MonitorRepository monitorRepository;
+  EventProducer eventProducer;
 
   @MockBean
-  StateChangeRepository stateChangeRepository;
-
-  @MockBean
-  BoundMonitorRepository boundMonitorRepository;
-
+  CachedRepositoryRequests cachedRepositoryRequests;
 
   @Before
   public void setup() {

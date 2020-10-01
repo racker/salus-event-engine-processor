@@ -17,6 +17,7 @@
 package com.rackspace.salus.event.processor.services;
 
 import com.rackspace.monplat.protocol.UniversalMetricFrame;
+import com.rackspace.salus.event.processor.engine.EsperEngine;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
@@ -36,8 +37,7 @@ public class UniversalMetricHandler {
 
   private static final String SALUS_RESOURCE_ID_KEY = "resourceId";
   private static final String SALUS_MONITOR_ID_KEY = "monitorId";
-  private static final String SALUS_TASK_ID_KEY = "taskId";
-  private static final String SALUS_ZONE_ID_KEY = "taskId";
+  private static final String SALUS_ZONE_ID_KEY = "zoneId";
   private static final String SALUS_ZONE_ID_DEFAULT = "agent";
   private static final String SALUS_MONITOR_TYPE = "monitorType";
   private static final String SALUS_MONITOR_SELECTOR_SCOPE = "selectorScope";
@@ -50,31 +50,35 @@ public class UniversalMetricHandler {
   }
 
   void processSalusMetricFrame(UniversalMetricFrame metric) throws IllegalArgumentException {
+    SalusEnrichedMetric salusMetric = convertUniversalMetricToSalusMetric(metric);
+    sendMetricToEsper(salusMetric);
+  }
 
-    if (metric.getMetricsCount() == 0) {
-      throw new IllegalArgumentException(String.format("Empty metric frame received in %s", metric));
+  void sendMetricToEsper(SalusEnrichedMetric metric) {
+    esperEngine.sendMetric(metric);
+  }
+
+  SalusEnrichedMetric convertUniversalMetricToSalusMetric(UniversalMetricFrame universalMetric) {
+    if (universalMetric.getMetricsCount() == 0) {
+      throw new IllegalArgumentException(String.format("Empty metric frame received in %s", universalMetric));
     }
-//    will probably use monitorType instead of the measurement?
-//    String measurement = metric.getMetrics(0).getGroup();
-//    if (StringUtils.isBlank(measurement)) {
-//      throw new IllegalArgumentException(String.format("Measurement is not set in %s", metric));
-//    }
+    String tenantId = universalMetric.getTenantId();
+    String accountType = universalMetric.getAccountType().toString();
 
-    String tenantId = metric.getTenantId();
-    String accountType = metric.getAccountType().toString();
-    String deviceId = metric.getDeviceMetadataOrDefault(SALUS_DEVICE_ID_KEY, UNKNOWN_VALUE);
-    String deviceName = metric.getDeviceMetadataOrDefault(SALUS_DEVICE_NAME_KEY, UNKNOWN_VALUE);
-    String deviceDc = metric.getDeviceMetadataOrDefault(SALUS_DEVICE_DC_KEY, UNKNOWN_VALUE);
+    // TODO : utilize these in the metric payload once umb enrichment is populating the values
+    String deviceId = universalMetric.getDeviceMetadataOrDefault(SALUS_DEVICE_ID_KEY, UNKNOWN_VALUE);
+    String deviceName = universalMetric.getDeviceMetadataOrDefault(SALUS_DEVICE_NAME_KEY, UNKNOWN_VALUE);
+    String deviceDc = universalMetric.getDeviceMetadataOrDefault(SALUS_DEVICE_DC_KEY, UNKNOWN_VALUE);
 
-    String resourceId = metric.getSystemMetadataOrThrow(SALUS_RESOURCE_ID_KEY);
+    String resourceId = universalMetric.getSystemMetadataOrThrow(SALUS_RESOURCE_ID_KEY);
     UUID monitorId = UUID.fromString(
-        metric.getSystemMetadataOrThrow(SALUS_MONITOR_ID_KEY));
+        universalMetric.getSystemMetadataOrThrow(SALUS_MONITOR_ID_KEY));
     // default to agent "zone" if no public zone is set
-    String zoneId = metric.getSystemMetadataOrDefault(SALUS_ZONE_ID_KEY, SALUS_ZONE_ID_DEFAULT); // TODO: confirm zoneId is null for agents
-    String monitorType = metric.getSystemMetadataOrThrow(SALUS_MONITOR_TYPE); // TODO: might need to get this from the metric group instead of system metadata?  Potential that we will receive lists of different metric types in future
-    String monitorSelectorScope = metric.getSystemMetadataOrThrow(SALUS_MONITOR_SELECTOR_SCOPE);
+    String zoneId = universalMetric.getSystemMetadataOrDefault(SALUS_ZONE_ID_KEY, SALUS_ZONE_ID_DEFAULT); // TODO: confirm zoneId is null for agents
+    String monitorType = universalMetric.getSystemMetadataOrThrow(SALUS_MONITOR_TYPE); // TODO: might need to get this from the metric group instead of system metadata?  Potential that we will receive lists of different metric types in future
+    String monitorSelectorScope = universalMetric.getSystemMetadataOrThrow(SALUS_MONITOR_SELECTOR_SCOPE);
 
-    SalusEnrichedMetric salusMetric = (SalusEnrichedMetric) new SalusEnrichedMetric()
+    return (SalusEnrichedMetric) new SalusEnrichedMetric()
         .setResourceId(resourceId)
         .setMonitorId(monitorId)
         .setZoneId(zoneId)
@@ -83,12 +87,6 @@ public class UniversalMetricHandler {
         .setMonitoringSystem(SALUS_MONITORING_SYSTEM)
         .setTenantId(tenantId)
         .setAccountType(accountType)
-        .setMetrics(metric.getMetricsList());
-
-    sendMetricToEsper(salusMetric);
-  }
-
-  void sendMetricToEsper(SalusEnrichedMetric metric) {
-    esperEngine.sendMetric(metric);
+        .setMetrics(universalMetric.getMetricsList());
   }
 }

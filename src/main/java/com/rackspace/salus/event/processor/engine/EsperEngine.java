@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.rackspace.salus.event.processor.services;
+package com.rackspace.salus.event.processor.engine;
 
 import com.espertech.esper.common.client.EPCompiled;
 import com.espertech.esper.common.client.configuration.Configuration;
@@ -30,11 +30,15 @@ import com.espertech.esper.runtime.client.EPRuntime;
 import com.espertech.esper.runtime.client.EPRuntimeProvider;
 import com.espertech.esper.runtime.client.EPStatement;
 import com.espertech.esper.runtime.client.EPUndeployException;
-import com.rackspace.salus.event.processor.config.EsperQuery;
 import com.rackspace.salus.event.processor.model.EnrichedMetric;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
+import com.rackspace.salus.event.processor.services.EsperEventsListener;
+import com.rackspace.salus.event.processor.services.StateEvaluator;
+import com.rackspace.salus.event.processor.services.TaskWarmthTracker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -48,7 +52,7 @@ public class EsperEngine {
 
   @Autowired
   public EsperEngine(TaskWarmthTracker taskWarmthTracker,
-      EsperEventsListener esperEventsListener) {
+      EsperEventsListener esperEventsListener, Environment env) {
     this.taskWarmthTracker = taskWarmthTracker;
     this.esperEventsListener = esperEventsListener;
 
@@ -72,7 +76,10 @@ public class EsperEngine {
 
     this.runtime = EPRuntimeProvider.getDefaultRuntime(this.config);
 
-//    initialize();
+    // don't deploy esper queries for tests; it is handled within each test
+    if (!env.acceptsProfiles(Profiles.of("test"))) {
+      initialize();
+    }
   }
 
   void initialize() {
@@ -160,7 +167,7 @@ public class EsperEngine {
     runtime.getDeploymentService().undeployAll();
   }
 
-  void sendMetric(EnrichedMetric metric) {
+  public void sendMetric(EnrichedMetric metric) {
     log.trace("Sending metric to esper engine, {}", metric);
     runtime.getEventService().sendEventBean(metric, metric.getClass().getSimpleName());
   }

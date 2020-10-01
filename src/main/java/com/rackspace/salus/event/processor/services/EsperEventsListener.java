@@ -37,15 +37,13 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class EsperEventsListener implements UpdateListener {
 
-  private EsperEventsHandler handler;
-  private MeterRegistry meterRegistry;
-  private Counter unexpectedEsperEventType;
-  private Counter unexpectedEsperEventForZone;
+  private final EsperEventsHandler handler;
+  private final Counter unexpectedEsperEventType;
+  private final Counter unexpectedEsperEventForZone;
 
   @Autowired
   public EsperEventsListener(EsperEventsHandler handler, MeterRegistry meterRegistry) {
     this.handler = handler;
-    this.meterRegistry = meterRegistry;
 
     unexpectedEsperEventType = meterRegistry.counter(MetricNames.SILENT_ERRORS,
         MetricTags.SERVICE_METRIC_TAG, "EsperEventListener",

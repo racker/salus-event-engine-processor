@@ -30,6 +30,8 @@
   <groupId>com.rackspace.salus</groupId>
   <artifactId>salus-event-engine-processor</artifactId>
   <version>0.0.1-SNAPSHOT</version>
+
+  <name>salus-event-engine-processor</name>
   <description>Utilizes Esper to process ingested metrics and outputs state change events</description>
 
   <properties>
@@ -52,6 +54,10 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-starter-sleuth</artifactId>
     </dependency>
     <dependency>
       <groupId>org.springframework.kafka</groupId>

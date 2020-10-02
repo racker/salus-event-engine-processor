@@ -19,7 +19,6 @@ package com.rackspace.salus.event.processor.engine;
 import static com.rackspace.salus.event.processor.utils.TestDataGenerators.createSalusEnrichedMetric;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.espertech.esper.common.client.EventBean;
 import com.espertech.esper.common.client.fireandforget.EPFireAndForgetQueryResult;
 import com.espertech.esper.common.client.scopetest.EPAssertionUtil;
 import com.espertech.esper.runtime.client.EPStatement;
@@ -31,7 +30,6 @@ import com.rackspace.salus.event.processor.services.EsperEventsListener;
 import com.rackspace.salus.event.processor.services.TaskWarmthTracker;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import org.apache.commons.lang3.SerializationUtils;
 import org.junit.After;

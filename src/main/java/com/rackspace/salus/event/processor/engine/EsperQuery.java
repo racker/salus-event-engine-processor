@@ -85,7 +85,7 @@ public class EsperQuery {
 
   public static final String STATE_COUNT_SATISFIED_LISTENER = ""
       + "@name('eventStateListener') "
-      + "select window(*) from StateCountSatisfiedWindow "
+      + "select window(*) as eventsForTask from StateCountSatisfiedWindow "
       + "   group by tenantId, resourceId, monitorId, taskId "
       + "   having count(*) > 0";
 

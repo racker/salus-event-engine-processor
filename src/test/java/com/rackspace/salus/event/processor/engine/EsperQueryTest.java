@@ -19,6 +19,7 @@ package com.rackspace.salus.event.processor.engine;
 import static com.rackspace.salus.event.processor.utils.TestDataGenerators.createSalusEnrichedMetric;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.espertech.esper.common.client.EventBean;
 import com.espertech.esper.common.client.fireandforget.EPFireAndForgetQueryResult;
 import com.espertech.esper.common.client.scopetest.EPAssertionUtil;
 import com.espertech.esper.runtime.client.EPStatement;
@@ -29,6 +30,10 @@ import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
 import com.rackspace.salus.event.processor.services.EsperEventsListener;
 import com.rackspace.salus.event.processor.services.TaskWarmthTracker;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import org.apache.commons.lang3.SerializationUtils;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -36,7 +41,6 @@ import org.junit.runner.RunWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.context.annotation.Profile;
 import org.springframework.test.context.junit4.SpringRunner;
 
 @RunWith(SpringRunner.class)
@@ -166,8 +170,40 @@ public class EsperQueryTest {
             metric.getZoneId(), metric.getState()});
   }
 
+  @Test
   public void testStateCountSatisfiedListener() {
-    // TODO STATE_COUNT_SATISFIED_LISTENER
+    SalusEnrichedMetric metric1 = createSalusEnrichedMetric().setZoneId("zone1");
+    SalusEnrichedMetric metric2 = SerializationUtils.clone(metric1).setZoneId("zone2");
+
+    esperEngine.compileAndDeployQuery(getBasicInsertQuery(metric1));
+
+    EPStatement stmt = esperEngine.compileAndDeployQuery(EsperQuery.STATE_COUNT_SATISFIED_LISTENER);
+    SupportUpdateListener listener = new SupportUpdateListener();
+    stmt.addListener(listener);
+
+    // the event will not enter the window until the state count has been satisfied for a single zone
+    esperEngine.sendMetric(metric1);
+    esperEngine.sendMetric(metric2);
+    listener.assertNotInvoked();
+
+    // a second event for a seen zone will trigger the listener
+    esperEngine.sendMetric(metric1);
+
+    Map<String, SalusEnrichedMetric[]> queryResponse =
+        (HashMap<String, SalusEnrichedMetric[]>) listener.assertOneGetNewAndReset().getUnderlying();
+    SalusEnrichedMetric[] metrics = queryResponse.get("eventsForTask");
+    assertThat(metrics).hasSize(1);
+    assertThat(metrics[0]).isEqualTo(metric1);
+
+    // a second event for the other zone should trigger a unique event for each zone to be seen
+    esperEngine.sendMetric(metric2);
+
+    queryResponse =
+        (HashMap<String, SalusEnrichedMetric[]>) listener.assertOneGetNewAndReset().getUnderlying();
+    metrics = queryResponse.get("eventsForTask");
+    assertThat(metrics).hasSize(2);
+
+    assertThat(metrics).containsExactlyInAnyOrder(metric1, metric2);
   }
 
   /**

@@ -17,12 +17,13 @@
 package com.rackspace.salus.event.processor.model;
 
 import com.rackspace.monplat.protocol.Metric;
+import java.io.Serializable;
 import java.util.List;
 import java.util.Map;
 import lombok.Data;
 
 @Data
-public abstract class EnrichedMetric {
+public abstract class EnrichedMetric implements Serializable {
   String monitoringSystem;
   String tenantId;
   String accountType;

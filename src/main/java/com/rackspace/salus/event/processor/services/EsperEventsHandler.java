@@ -45,7 +45,6 @@ public class EsperEventsHandler {
   private final EventProducer eventProducer;
   private final TaskWarmthTracker taskWarmthTracker;
 
-
   private static final double METRIC_WINDOW_MULTIPLIER = 1.5;
 
   private final Counter.Builder eventProcessingAnomalies;
@@ -161,7 +160,7 @@ public class EsperEventsHandler {
    * This is based on the time of the latest event seen and the period of the corresponding monitor.
    *
    * @param metrics
-   * @return
+   * @return An instant representing the window of acceptable event timestamps
    */
   private Instant getTimeWindowForStateCalculation(List<SalusEnrichedMetric> metrics) {
     Instant newestDate = metrics.stream()
@@ -174,8 +173,6 @@ public class EsperEventsHandler {
 
     return newestDate.minusSeconds(windowSeconds);
   }
-
-
 
   /**
    * Validates enough events have been received to confidently evaluate a valid state.

@@ -19,17 +19,30 @@ package com.rackspace.salus.event.processor.services;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
 import java.time.Instant;
 import java.util.Map;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class StateEvaluator {
 
-  // TODO use metric timestamps instead of getStateEvaluationTimestamp ?
-  // TODO taskId is required as a method parameter
-  public static SalusEnrichedMetric generateEnrichedMetric(SalusEnrichedMetric metric, String state, Map<String, Integer> stateCounts) {
+  /**
+   * This method will be used within the Esper query that is added to the engine for each
+   * task loaded.
+   *
+   * @param metric
+   * @param taskId
+   * @param state
+   * @param stateCounts
+   * @return
+   */
+  // TODO this is only an example of what will be used. It will be finalized in future PRs
+  public static SalusEnrichedMetric generateEnrichedMetric(
+      SalusEnrichedMetric metric, UUID taskId, String state, Map<String, Integer> stateCounts) {
     return metric
         .setState(state)
+        .setTaskId(taskId)
         .setExpectedStateCounts(stateCounts)
+        // TODO use metric timestamps instead of `now`` ?
         .setStateEvaluationTimestamp(Instant.now());
   }
 

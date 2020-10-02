@@ -21,7 +21,9 @@ import static java.util.Collections.singletonMap;
 import com.google.protobuf.Timestamp;
 import com.rackspace.monplat.protocol.Metric;
 import com.rackspace.monplat.protocol.UniversalMetricFrame;
+import com.rackspace.monplat.protocol.UniversalMetricFrame.MonitoringSystem;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
+import com.rackspace.salus.telemetry.model.ConfigSelectorScope;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -57,7 +59,7 @@ public class TestDataGenerators {
             "original", 2
         ))
         .setMonitorSelectorScope(monitorSelectorScope)
-        .setMonitoringSystem("Salus")
+        .setMonitoringSystem(MonitoringSystem.SALUS.toString())
         .setTenantId(tenantId)
         .setAccountType(accountType)
         .setMetrics(Collections.emptyList())
@@ -105,7 +107,7 @@ public class TestDataGenerators {
         "monitorId", "00000000-0000-0000-0000-000000000001",
         "zoneId", "zone-1",
         "monitorType", "ping",
-        "selectorScope", "remote"
+        "selectorScope", ConfigSelectorScope.REMOTE.toString()
     );
 
     return UniversalMetricFrame.newBuilder()

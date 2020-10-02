@@ -21,6 +21,7 @@ import com.rackspace.salus.common.config.MetricTags;
 import com.rackspace.salus.event.processor.caching.CachedRepositoryRequests;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
 import com.rackspace.salus.telemetry.entities.StateChange;
+import com.rackspace.salus.telemetry.model.ConfigSelectorScope;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
@@ -189,6 +190,11 @@ public class EsperEventsHandler {
    */
   private boolean isTaskWarm(List<SalusEnrichedMetric> contributingEvents) {
     SalusEnrichedMetric metric = contributingEvents.get(0);
+
+    // Local monitors cannot have multiple zones so a single metric is enough to be warm
+    if (metric.getMonitorSelectorScope().equals(ConfigSelectorScope.LOCAL.toString())) {
+      return true;
+    }
 
     int warmth;
     int expectedEventCount = repositoryRequests.getExpectedEventCountForMonitor(metric);

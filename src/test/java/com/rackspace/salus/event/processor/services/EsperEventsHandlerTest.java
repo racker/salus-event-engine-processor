@@ -29,6 +29,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rackspace.salus.event.processor.caching.CachedRepositoryRequests;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
+import com.rackspace.salus.telemetry.model.ConfigSelectorScope;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.Collections;
@@ -147,6 +148,28 @@ public class EsperEventsHandlerTest {
     verify(cachedRepositoryRequests, times(2)).getExpectedEventCountForMonitor(metric);
     verify(cachedRepositoryRequests, times(2)).getPreviousKnownState(
         metric.getTenantId(), metric.getResourceId(), metric.getMonitorId(), metric.getTaskId());
+
+    verifyNoMoreInteractions(cachedRepositoryRequests, eventProducer);
+  }
+
+  @Test
+  public void processEsperEvents_localEvent() {
+    SalusEnrichedMetric metric = createSalusEnrichedMetric().setMonitorSelectorScope(
+        ConfigSelectorScope.LOCAL.toString());
+
+    // send two events each with different states
+    eventsHandler.processEsperEvents(List.of(metric));
+
+    // no requests were made to look up the expected event count since (local monitors are always 1)
+    verify(cachedRepositoryRequests, times(0)).getExpectedEventCountForMonitor(metric);
+
+    // other requests were still made
+    verify(cachedRepositoryRequests).getMonitorInterval(metric.getTenantId(), metric.getMonitorId());
+    verify(cachedRepositoryRequests).getPreviousKnownState(
+        metric.getTenantId(), metric.getResourceId(), metric.getMonitorId(), metric.getTaskId());
+
+    verify(cachedRepositoryRequests).saveAndCacheStateChange(any());
+    verify(eventProducer).sendStateChange(any());
 
     verifyNoMoreInteractions(cachedRepositoryRequests, eventProducer);
   }

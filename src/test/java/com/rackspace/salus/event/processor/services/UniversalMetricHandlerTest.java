@@ -23,6 +23,7 @@ import static org.mockito.Mockito.verify;
 import com.rackspace.monplat.protocol.UniversalMetricFrame;
 import com.rackspace.salus.event.processor.engine.EsperEngine;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
+import com.rackspace.salus.telemetry.model.ConfigSelectorScope;
 import java.util.UUID;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -57,7 +58,7 @@ public class UniversalMetricHandlerTest {
         .setTaskId(null)
         .setZoneId("zone-1")
         .setMonitorType("ping")
-        .setMonitorSelectorScope("remote")
+        .setMonitorSelectorScope(ConfigSelectorScope.REMOTE.toString())
         .setExpectedStateCounts(null)
         .setExcludedResourceIds(null)
         .setStateEvaluationTimestamp(null)

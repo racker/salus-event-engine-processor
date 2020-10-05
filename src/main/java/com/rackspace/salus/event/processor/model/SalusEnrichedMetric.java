@@ -39,7 +39,7 @@ public class SalusEnrichedMetric extends EnrichedMetric {
   String state;
 
   public String getCompositeKey() {
-    return String.format("%s:%s:%s:%s",
-        tenantId, resourceId, monitorId, taskId);
+    return String.join(":",
+        tenantId, resourceId, monitorId.toString(), taskId.toString());
   }
 }

@@ -24,6 +24,16 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+/**
+ * Used to keep track of the number of events seen for a specific task.
+ *
+ * If all expected zone are not seen, rather than waiting an infinite amount of time
+ * for them to appear, this instead allows for a Task's state to be considered valid
+ * if enough events have been seen for it.
+ *
+ * This helps the event-processing system continue to send out state changes even once
+ * a poller/zone stops sending metrics.
+ */
 @Component
 public class TaskWarmthTracker implements Serializable {
   private static final int RESET_AT = Integer.MAX_VALUE / 2;
@@ -38,33 +48,22 @@ public class TaskWarmthTracker implements Serializable {
 
   //TODO: Update this to accept a monitor change event instead of string
   public void resetWarmthForTask(String monitorEvent) {
-    AtomicInteger warmth = warmingTasks.get(monitorEvent);
-
-    if (warmth != null) {
-      warmingTasks.get(monitorEvent).set(0);
-    }
+    warmingTasks.computeIfPresent(monitorEvent, (k,v) -> new AtomicInteger(0));
   }
 
   public int getTaskWarmth(SalusEnrichedMetric metric) {
-    AtomicInteger warmth = warmingTasks.get(metric.getCompositeKey());
+    AtomicInteger warmth = warmingTasks.computeIfAbsent(metric.getCompositeKey(),
+        k -> new AtomicInteger(0));
 
-    if (warmth == null) {
-      warmth = warmingTasks.putIfAbsent(metric.getCompositeKey(), new AtomicInteger(1));
+    int value = warmth.incrementAndGet();
+
+    // Once the value reaches RESET_AT, we reset it to RESET_TO
+    if (value >= RESET_AT) {
+      //Noting that retrieval operations do not block and can overlap with update operations
+      warmingTasks.get(metric.getCompositeKey()).set(RESET_TO);
     }
 
-    if (warmth != null) {
-      int value = warmth.incrementAndGet();
-
-      // Once the value reaches RESET_AT, we reset it to RESET_TO
-      if (value >= RESET_AT) {
-        //Noting that retrieval operations do not block and can overlap with update operations
-        warmingTasks.get(metric.getCompositeKey()).set(RESET_TO);
-      }
-
-      // We never return more than RESET_TO
-      return Math.min(value, RESET_TO);
-    } else {
-      return 1;
-    }
+    // We never return more than RESET_TO
+    return Math.min(value, RESET_TO);
   }
 }

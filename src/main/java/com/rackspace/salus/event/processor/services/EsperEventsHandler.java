@@ -32,7 +32,6 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -45,6 +44,9 @@ public class EsperEventsHandler {
   private final EventProducer eventProducer;
   private final TaskWarmthTracker taskWarmthTracker;
 
+  // Helps determine how far back in history a metric can be and still be used in the state
+  // calculation.
+  // The monitor's interval multiplied by this value is used.
   private static final double METRIC_WINDOW_MULTIPLIER = 1.5;
 
   private final Counter.Builder eventProcessingAnomalies;
@@ -54,8 +56,7 @@ public class EsperEventsHandler {
       MeterRegistry meterRegistry, ObjectMapper objectMapper,
       CachedRepositoryRequests repositoryRequests,
       EventProducer eventProducer,
-      TaskWarmthTracker taskWarmthTracker,
-      @Value("${spring.application.name}") String appName) {
+      TaskWarmthTracker taskWarmthTracker) {
     this.repositoryRequests = repositoryRequests;
     this.meterRegistry = meterRegistry;
     this.objectMapper = objectMapper;
@@ -63,9 +64,20 @@ public class EsperEventsHandler {
     this.taskWarmthTracker = taskWarmthTracker;
 
     eventProcessingAnomalies = Counter.builder("event_processing_anomaly")
-        .tag(MetricTags.SERVICE_METRIC_TAG, appName);
+        .tag(MetricTags.SERVICE_METRIC_TAG, "EsperEventsHandler");
   }
 
+  /**
+   * Accepts a list of salus metrics from an Esper Query Listener.
+   * The list should contain the most recent metric (with a calculated state) from each observed zone.
+   *
+   * A single state to represent the tenantId:resourceId:monitorId:taskId set is generated
+   * by filtering out any old values and then calculating the quorum value.
+   *
+   * Any state changes are stored in sql and posted to kafka.
+   *
+   * @param metricsWithState A list of salus metrics with the state field populated.
+   */
   public void processEsperEvents(List<SalusEnrichedMetric> metricsWithState) {
     if (metricsWithState.isEmpty()) {
       log.warn("Unable to process empty metrics list");
@@ -75,6 +87,7 @@ public class EsperEventsHandler {
       return;
     }
 
+    // These fields are constant across metrics so pluck them from the first entry for reuse later.
     String tenantId = metricsWithState.get(0).getTenantId();
     String resourceId = metricsWithState.get(0).getResourceId();
     UUID monitorId = metricsWithState.get(0).getMonitorId();
@@ -176,11 +189,16 @@ public class EsperEventsHandler {
 
   /**
    * Validates enough events have been received to confidently evaluate a valid state.
+   *
    * For remote monitor types this relates to the number of zones configured, for agent monitors
    * only a single event must be seen.
    *
    * This is required to handle new tasks that are still "warming up" and for any service restarts
    * where previous state has been lost.
+   *
+   * i.e. A state change event should not be sent out for any newly created/loaded Tasks where
+   *      the expected number of metrics have not yet been seen. Do not alert on the first metric
+   *      seen, but instead wait for the number of expected metrics or a sensible maximum time.
    *
    * @param contributingEvents The "recent" observed events for each zone relating to this task event.
    * @return True if the enough events have been seen, otherwise false.
@@ -193,7 +211,7 @@ public class EsperEventsHandler {
       return true;
     }
 
-    int warmth;
+    int warmth; // this will track the number of metrics seen for a task over time
     int expectedEventCount = repositoryRequests.getExpectedEventCountForMonitor(metric);
 
     if (contributingEvents.size() == expectedEventCount) {

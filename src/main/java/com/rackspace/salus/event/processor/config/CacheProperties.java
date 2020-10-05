@@ -25,9 +25,11 @@ public class CacheProperties {
    /*
     * This value needs to be large enough to hold keys for each of these scenarios:
     *
-    * 1. All monitors an event-processor may process metrics for
-    * 2. All monitors per resource per tenant an event-processor may process metrics for
-    * 3. All tasks per monitor per resource per tenant an event-processor may handle state changes for
+    * <ol>
+    *   <li> All monitors an event-processor may process metrics for
+    *   <li> All monitors per resource per tenant an event-processor may process metrics for
+    *   <li> All tasks per monitor per resource per tenant an event-processor may handle state changes for
+    * </ol>
     *
     * Therefore the 3rd scenario is the one that really dictates this value.
     */

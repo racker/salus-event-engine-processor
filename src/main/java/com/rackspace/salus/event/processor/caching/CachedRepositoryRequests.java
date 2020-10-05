@@ -32,25 +32,34 @@ import java.util.UUID;
 import org.springframework.cache.annotation.CachePut;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Scope;
+import org.springframework.context.annotation.ScopedProxyMode;
 import org.springframework.stereotype.Component;
 
 @Component
 @Import(CacheConfig.class)
+// this is required to allow a method to call @Cacheable methods from within the same class
+// i.e. how saveAndCacheStateChange calls updateStateChangeCache.
+@Scope(proxyMode = ScopedProxyMode.TARGET_CLASS)
 public class CachedRepositoryRequests {
 
   private final BoundMonitorRepository boundMonitorRepository;
   private final StateChangeRepository stateChangeRepository;
   private final MonitorRepository monitorRepository;
 
+  private final CachedRepositoryRequests _cachedRequests; // related to ScopedProxyMode
+
   private static final Duration FALLBACK_MONITOR_INTERVAL = Duration.ofMinutes(30);
 
   public CachedRepositoryRequests(
       BoundMonitorRepository boundMonitorRepository,
       StateChangeRepository stateChangeRepository,
-      MonitorRepository monitorRepository) {
+      MonitorRepository monitorRepository,
+      CachedRepositoryRequests cachedRequests) {
     this.boundMonitorRepository = boundMonitorRepository;
     this.stateChangeRepository = stateChangeRepository;
     this.monitorRepository = monitorRepository;
+    _cachedRequests = cachedRequests;
   }
 
   @Cacheable(cacheNames = MONITOR_INTERVALS, key = "{#tenantId, #monitorId}")
@@ -79,7 +88,7 @@ public class CachedRepositoryRequests {
   }
 
   public StateChange saveAndCacheStateChange(StateChange stateChange) {
-    updateStateChangeCache(stateChange);
+    _cachedRequests.updateStateChangeCache(stateChange);
     return stateChangeRepository.save(stateChange);
   }
 

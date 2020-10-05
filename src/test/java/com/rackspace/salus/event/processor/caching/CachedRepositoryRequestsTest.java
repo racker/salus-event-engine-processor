@@ -19,6 +19,7 @@ package com.rackspace.salus.event.processor.caching;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
@@ -140,9 +141,28 @@ public class CachedRepositoryRequestsTest {
     // no db lookup on subsequent requests.
     verifyNoMoreInteractions(stateChangeRepository);
     assertThat(state).isEqualTo(stateChange.getState());
-
-
   }
 
+  @Test
+  public void saveAndCacheStateChangeTest() {
+    final StateChange stateChange = podamFactory.manufacturePojo(StateChange.class);
+
+    // first save a new state in the db and cache
+    repositoryRequests.saveAndCacheStateChange(stateChange);
+    verify(stateChangeRepository).save(stateChange);
+
+    // retrieving the state should not require a db lookup
+    String storedState = repositoryRequests.getPreviousKnownState(
+        stateChange.getTenantId(),
+        stateChange.getResourceId(),
+        stateChange.getMonitorId(),
+        stateChange.getTaskId());
+
+    assertThat(storedState).isEqualTo(stateChange.getState());
+
+    verify(stateChangeRepository, never()).findFirstByTenantIdAndResourceIdAndMonitorIdAndTaskId(
+        anyString(), anyString(), any(), any());
+    verifyNoMoreInteractions(stateChangeRepository);
+  }
 
 }

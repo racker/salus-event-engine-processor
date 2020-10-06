@@ -170,6 +170,7 @@ public class EsperQueryTest {
 
   @Test
   public void testStateCountSatisfiedListener() {
+    // These are generated with a state of "original" and an expectedCount of 2
     SalusEnrichedMetric metric1 = createSalusEnrichedMetric().setZoneId("zone1");
     SalusEnrichedMetric metric2 = SerializationUtils.clone(metric1).setZoneId("zone2");
 
@@ -179,7 +180,7 @@ public class EsperQueryTest {
     SupportUpdateListener listener = new SupportUpdateListener();
     stmt.addListener(listener);
 
-    // the event will not enter the window until the state count has been satisfied for a single zone
+    // the event will not enter the window until the state count has been satisfied for a single zone.
     esperEngine.sendMetric(metric1);
     esperEngine.sendMetric(metric2);
     listener.assertNotInvoked();

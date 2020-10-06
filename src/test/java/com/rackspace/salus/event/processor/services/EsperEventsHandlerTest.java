@@ -17,6 +17,7 @@
 package com.rackspace.salus.event.processor.services;
 
 import static com.rackspace.salus.event.processor.utils.TestDataGenerators.createSalusEnrichedMetric;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.AdditionalAnswers.returnsFirstArg;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -27,9 +28,11 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rackspace.salus.event.processor.caching.CachedRepositoryRequests;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
+import com.rackspace.salus.telemetry.entities.StateChange;
 import com.rackspace.salus.telemetry.model.ConfigSelectorScope;
 import com.rackspace.salus.telemetry.repositories.BoundMonitorRepository;
 import com.rackspace.salus.telemetry.repositories.MonitorRepository;
@@ -38,9 +41,12 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
+import org.apache.commons.lang3.SerializationUtils;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.cache.CacheType;
 import org.springframework.boot.test.autoconfigure.core.AutoConfigureCache;
@@ -54,6 +60,9 @@ import org.springframework.test.context.junit4.SpringRunner;
 // caching is tested in CachedRepositoryRequestsTest not here
 @AutoConfigureCache(cacheProvider = CacheType.NONE)
 public class EsperEventsHandlerTest {
+
+  @Autowired
+  ObjectMapper objectMapper;
 
   @Autowired
   EsperEventsHandler eventsHandler;
@@ -74,6 +83,9 @@ public class EsperEventsHandlerTest {
 
   @MockBean
   EventProducer eventProducer;
+
+  @Captor
+  ArgumentCaptor<StateChange> stateChangeCaptor;
 
   @Before
   public void setup() {
@@ -100,8 +112,18 @@ public class EsperEventsHandlerTest {
   }
 
   @Test
-  public void processEsperEvents_oneExpectedEvent_noHistory() {
+  public void processEsperEvents_oneExpectedEvent_noHistory() throws JsonProcessingException {
     SalusEnrichedMetric metric = createSalusEnrichedMetric();
+
+    StateChange expectedStateChange = new StateChange()
+        .setPreviousState(null)
+        .setState(metric.getState())
+        .setContributingEvents(objectMapper.writeValueAsString(List.of(metric)))
+        .setMessage(null)
+        .setTenantId(metric.getTenantId())
+        .setResourceId(metric.getResourceId())
+        .setMonitorId(metric.getMonitorId())
+        .setTaskId(metric.getTaskId());
 
     eventsHandler.processEsperEvents(List.of(metric));
 
@@ -113,13 +135,28 @@ public class EsperEventsHandlerTest {
         .getPreviousKnownState(
             metric.getTenantId(), metric.getResourceId(), metric.getMonitorId(), metric.getTaskId());
 
-    verify(cachedRepositoryRequests).saveAndCacheStateChange(any());
-    verify(eventProducer).sendStateChange(any());
+    verify(cachedRepositoryRequests).saveAndCacheStateChange(stateChangeCaptor.capture());
+    StateChange stateChange = stateChangeCaptor.getValue();
+    assertThat(stateChange)
+        .isEqualToIgnoringGivenFields(expectedStateChange,
+            "id", "creationTimestamp", "evaluationTimestamp", "updatedTimestamp");
+
+    verify(eventProducer).sendStateChange(stateChange);
   }
 
   @Test
-  public void processEsperEvents_threeExpectedEvents_noHistory() {
+  public void processEsperEvents_threeExpectedEvents_noHistory() throws JsonProcessingException {
     SalusEnrichedMetric metric = createSalusEnrichedMetric();
+
+    StateChange expectedStateChange = new StateChange()
+        .setPreviousState(null)
+        .setState(metric.getState())
+        .setContributingEvents(objectMapper.writeValueAsString(List.of(metric, metric, metric)))
+        .setMessage(null)
+        .setTenantId(metric.getTenantId())
+        .setResourceId(metric.getResourceId())
+        .setMonitorId(metric.getMonitorId())
+        .setTaskId(metric.getTaskId());
 
     // override default expected number of events/zones
     when(cachedRepositoryRequests.getExpectedEventCountForMonitor(any()))
@@ -140,36 +177,84 @@ public class EsperEventsHandlerTest {
         .getPreviousKnownState(
             metric.getTenantId(), metric.getResourceId(), metric.getMonitorId(), metric.getTaskId());
 
-    verify(cachedRepositoryRequests).saveAndCacheStateChange(any());
-    verify(eventProducer).sendStateChange(any());
+    verify(cachedRepositoryRequests).saveAndCacheStateChange(stateChangeCaptor.capture());
+    StateChange stateChange = stateChangeCaptor.getValue();
+    assertThat(stateChange)
+        .isEqualToIgnoringGivenFields(expectedStateChange,
+            "id", "creationTimestamp", "evaluationTimestamp", "updatedTimestamp");
+
+    verify(eventProducer).sendStateChange(stateChange);
   }
 
   @Test
-  public void processEsperEvents_verifyStateChange() {
-    SalusEnrichedMetric metric = createSalusEnrichedMetric();
+  public void processEsperEvents_verifyStateChange() throws JsonProcessingException {
+    // these represent the same monitor/zone outputting different states on subsequent polling cycles
+    SalusEnrichedMetric metric1 = createSalusEnrichedMetric().setState("oldState");
+    SalusEnrichedMetric metric2 = SerializationUtils.clone(metric1).setState("newState");
+
+    StateChange expectedStateChange1 = new StateChange()
+        .setPreviousState(null)
+        .setState(metric1.getState())
+        .setContributingEvents(objectMapper.writeValueAsString(List.of(metric1)))
+        .setMessage(null)
+        .setTenantId(metric1.getTenantId())
+        .setResourceId(metric1.getResourceId())
+        .setMonitorId(metric1.getMonitorId())
+        .setTaskId(metric1.getTaskId());
+
+    StateChange expectedStateChange2 = new StateChange()
+        .setPreviousState("oldState")
+        .setState("newState")
+        .setContributingEvents(objectMapper.writeValueAsString(List.of(metric2)))
+        .setMessage(null)
+        .setTenantId(metric1.getTenantId())
+        .setResourceId(metric1.getResourceId())
+        .setMonitorId(metric1.getMonitorId())
+        .setTaskId(metric1.getTaskId());
+
+    // override the default mock
+    when(cachedRepositoryRequests.getPreviousKnownState(anyString(), anyString(), any(), any()))
+        .thenReturn(null)
+        .thenReturn("oldState");
 
     // send two events each with different states
-    eventsHandler.processEsperEvents(List.of(metric.setState("oldState")));
-    eventsHandler.processEsperEvents(List.of(metric.setState("newState")));
+    eventsHandler.processEsperEvents(List.of(metric1));
+    eventsHandler.processEsperEvents(List.of(metric2));
 
-    verify(cachedRepositoryRequests, times(2)).saveAndCacheStateChange(any());
-    verify(eventProducer, times(2)).sendStateChange(any());
+    verify(cachedRepositoryRequests, times(2)).saveAndCacheStateChange(stateChangeCaptor.capture());
+    List<StateChange> stateChanges = stateChangeCaptor.getAllValues();
+    assertThat(stateChanges)
+        .usingElementComparatorIgnoringFields("id", "creationTimestamp", "evaluationTimestamp", "updatedTimestamp")
+        .containsExactlyInAnyOrder(expectedStateChange1, expectedStateChange2);
+
+    verify(eventProducer).sendStateChange(stateChanges.get(0));
+    verify(eventProducer).sendStateChange(stateChanges.get(1));
 
     // verify basic db/cache lookups
-    verify(cachedRepositoryRequests, times(2)).getMonitorInterval(metric.getTenantId(), metric.getMonitorId());
-    verify(cachedRepositoryRequests, times(2)).getExpectedEventCountForMonitor(metric);
+    verify(cachedRepositoryRequests, times(2)).getMonitorInterval(metric1.getTenantId(), metric1.getMonitorId());
+    verify(cachedRepositoryRequests).getExpectedEventCountForMonitor(metric1);
+    verify(cachedRepositoryRequests).getExpectedEventCountForMonitor(metric2);
     verify(cachedRepositoryRequests, times(2)).getPreviousKnownState(
-        metric.getTenantId(), metric.getResourceId(), metric.getMonitorId(), metric.getTaskId());
+        metric1.getTenantId(), metric1.getResourceId(), metric1.getMonitorId(), metric1.getTaskId());
 
     verifyNoMoreInteractions(cachedRepositoryRequests, eventProducer);
   }
 
   @Test
-  public void processEsperEvents_localEvent() {
+  public void processEsperEvents_localEvent() throws JsonProcessingException {
     SalusEnrichedMetric metric = createSalusEnrichedMetric().setMonitorSelectorScope(
         ConfigSelectorScope.LOCAL.toString());
 
-    // send two events each with different states
+    StateChange expectedStateChange = new StateChange()
+        .setPreviousState(null)
+        .setState(metric.getState())
+        .setContributingEvents(objectMapper.writeValueAsString(List.of(metric)))
+        .setMessage(null)
+        .setTenantId(metric.getTenantId())
+        .setResourceId(metric.getResourceId())
+        .setMonitorId(metric.getMonitorId())
+        .setTaskId(metric.getTaskId());
+
     eventsHandler.processEsperEvents(List.of(metric));
 
     // no requests were made to look up the expected event count since (local monitors are always 1)
@@ -180,8 +265,13 @@ public class EsperEventsHandlerTest {
     verify(cachedRepositoryRequests).getPreviousKnownState(
         metric.getTenantId(), metric.getResourceId(), metric.getMonitorId(), metric.getTaskId());
 
-    verify(cachedRepositoryRequests).saveAndCacheStateChange(any());
-    verify(eventProducer).sendStateChange(any());
+    verify(cachedRepositoryRequests).saveAndCacheStateChange(stateChangeCaptor.capture());
+    StateChange stateChange = stateChangeCaptor.getValue();
+    assertThat(stateChange)
+        .isEqualToIgnoringGivenFields(expectedStateChange,
+            "id", "creationTimestamp", "evaluationTimestamp", "updatedTimestamp");
+
+    verify(eventProducer).sendStateChange(stateChange);
 
     verifyNoMoreInteractions(cachedRepositoryRequests, eventProducer);
   }

@@ -97,17 +97,17 @@ public class TestDataGenerators {
         .build());
 
     Map<String, String> deviceMetadata = Map.of(
-        "deviceId", "myDeviceId",
-        "deviceName", "myDeviceName",
+        "device_id", "myDeviceId",
+        "device_name", "myDeviceName",
         "datacenter", "dc1"
     );
 
     Map<String, String> systemMetadata = Map.of(
-        "resourceId", "resource-1",
-        "monitorId", "00000000-0000-0000-0000-000000000001",
-        "zoneId", "zone-1",
-        "monitorType", "ping",
-        "selectorScope", ConfigSelectorScope.REMOTE.toString()
+        "resource_id", "resource-1",
+        "monitor_id", "00000000-0000-0000-0000-000000000001",
+        "monitoring_zone_id", "zone-1",
+        "monitor_type", "ping",
+        "monitor_selector_scope", ConfigSelectorScope.REMOTE.toString()
     );
 
     return UniversalMetricFrame.newBuilder()

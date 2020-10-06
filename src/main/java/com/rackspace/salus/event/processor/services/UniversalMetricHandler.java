@@ -17,6 +17,7 @@
 package com.rackspace.salus.event.processor.services;
 
 import com.rackspace.monplat.protocol.UniversalMetricFrame;
+import com.rackspace.monplat.protocol.UniversalMetricFrame.MonitoringSystem;
 import com.rackspace.salus.event.processor.engine.EsperEngine;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
 import java.util.UUID;
@@ -27,20 +28,20 @@ import org.springframework.stereotype.Service;
 @Service
 @Slf4j
 public class UniversalMetricHandler {
-  private static final String SALUS_MONITORING_SYSTEM = "Salus";
+  private static final String SALUS_MONITORING_SYSTEM = MonitoringSystem.SALUS.toString();
   private static final String UNKNOWN_VALUE = "unknown";
 
   // deviceMetadata keys populated by umb-enrichment
-  private static final String SALUS_DEVICE_ID_KEY = "deviceId";
-  private static final String SALUS_DEVICE_NAME_KEY = "serverName";
+  private static final String SALUS_DEVICE_ID_KEY = "device_id";
+  private static final String SALUS_DEVICE_NAME_KEY = "server_name";
   private static final String SALUS_DEVICE_DC_KEY = "datacenter";
 
-  private static final String SALUS_RESOURCE_ID_KEY = "resourceId";
-  private static final String SALUS_MONITOR_ID_KEY = "monitorId";
-  private static final String SALUS_ZONE_ID_KEY = "zoneId";
+  private static final String SALUS_RESOURCE_ID_KEY = "resource_id";
+  private static final String SALUS_MONITOR_ID_KEY = "monitor_id";
+  private static final String SALUS_ZONE_ID_KEY = "monitoring_zone_id";
   private static final String SALUS_ZONE_ID_DEFAULT = "agent";
-  private static final String SALUS_MONITOR_TYPE = "monitorType";
-  private static final String SALUS_MONITOR_SELECTOR_SCOPE = "selectorScope";
+  private static final String SALUS_MONITOR_TYPE = "monitor_type";
+  private static final String SALUS_MONITOR_SELECTOR_SCOPE = "monitor_selector_scope";
 
   EsperEngine esperEngine;
 

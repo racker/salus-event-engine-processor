@@ -16,7 +16,9 @@
 
 package com.rackspace.salus.event.processor.services;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.rackspace.salus.common.config.MetricNames;
 import com.rackspace.salus.common.config.MetricTags;
 import com.rackspace.salus.event.processor.caching.CachedRepositoryRequests;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
@@ -50,6 +52,7 @@ public class EsperEventsHandler {
   private static final double METRIC_WINDOW_MULTIPLIER = 1.5;
 
   private final Counter.Builder eventProcessingAnomalies;
+  private final Counter.Builder eventProcessingErrors;
 
   @Autowired
   public EsperEventsHandler(
@@ -64,6 +67,9 @@ public class EsperEventsHandler {
     this.taskWarmthTracker = taskWarmthTracker;
 
     eventProcessingAnomalies = Counter.builder("event_processing_anomaly")
+        .tag(MetricTags.SERVICE_METRIC_TAG, "EsperEventsHandler");
+
+    eventProcessingErrors = Counter.builder(MetricNames.SILENT_ERRORS)
         .tag(MetricTags.SERVICE_METRIC_TAG, "EsperEventsHandler");
   }
 
@@ -118,9 +124,17 @@ public class EsperEventsHandler {
   }
 
   private void handleStateChange(List<SalusEnrichedMetric> contributingEvents, String newState, String oldState) {
-    StateChange stateChange = generateStateChange(newState, oldState, contributingEvents);
-    stateChange = repositoryRequests.saveAndCacheStateChange(stateChange);
-    eventProducer.sendStateChange(stateChange);
+    try {
+      StateChange stateChange = generateStateChange(newState, oldState, contributingEvents);
+      stateChange = repositoryRequests.saveAndCacheStateChange(stateChange);
+      eventProducer.sendStateChange(stateChange);
+    } catch (JsonProcessingException e) {
+      log.error("Failed to serialize state change for events={}", contributingEvents, e);
+      eventProcessingErrors.tags(MetricTags.OPERATION_METRIC_TAG, "handleStateChange",
+          MetricTags.EXCEPTION_METRIC_TAG, e.getClass().getSimpleName(),
+          MetricTags.OBJECT_TYPE_METRIC_TAG, StateChange.class.getSimpleName())
+          .register(meterRegistry).increment();
+    }
   }
 
   /**
@@ -241,7 +255,8 @@ public class EsperEventsHandler {
     }
   }
 
-  private StateChange generateStateChange(String state, String prevState, List<SalusEnrichedMetric> contributingEvents) {
+  private StateChange generateStateChange(String state, String prevState, List<SalusEnrichedMetric> contributingEvents)
+      throws JsonProcessingException {
     SalusEnrichedMetric event = contributingEvents.get(0);
     return new StateChange()
         .setTenantId(event.getTenantId())
@@ -252,6 +267,6 @@ public class EsperEventsHandler {
         .setPreviousState(prevState)
         .setMessage(null)
         .setEvaluationTimestamp(Instant.now())
-        .setContributingEvents(contributingEvents.toString());
+        .setContributingEvents(objectMapper.writeValueAsString(contributingEvents));
   }
 }

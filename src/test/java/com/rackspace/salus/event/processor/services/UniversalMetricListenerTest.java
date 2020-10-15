@@ -40,8 +40,6 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
-import org.springframework.kafka.listener.ConsumerSeekAware.ConsumerSeekCallback;
-import org.springframework.kafka.test.EmbeddedKafkaBroker;
 import org.springframework.kafka.test.context.EmbeddedKafka;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
@@ -101,14 +99,8 @@ public class UniversalMetricListenerTest {
   @Qualifier("consumer3")
   UniversalMetricListener consumer3;
 
-  @Autowired
-  EmbeddedKafkaBroker embeddedKafka;
-
   @MockBean
   UniversalMetricHandler handler;
-
-  @MockBean
-  ConsumerSeekCallback consumerSeek;
 
   @Test
   public void testInitialStartup_1consumer() {

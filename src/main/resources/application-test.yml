@@ -1,0 +1,5 @@
+salus:
+  kafka-listener-auto-start: false
+logging:
+  level:
+    com.rackspace.salus: debug

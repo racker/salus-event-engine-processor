@@ -1,17 +1,21 @@
 /*
- * Copyright 2020 Rackspace US, Inc.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *  * Copyright 2020 Rackspace US, Inc.
+ *  *
+ *  * Licensed under the Apache License, Version 2.0 (the "License");
+ *  * you may not use this file except in compliance with the License.
+ *  * You may obtain a copy of the License at
+ *  *
+ *  *     http://www.apache.org/licenses/LICENSE-2.0
+ *  *
+ *  * Unless required by applicable law or agreed to in writing, software
+ *  * distributed under the License is distributed on an "AS IS" BASIS,
+ *  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  * See the License for the specific language governing permissions and
+ *  * limitations under the License.
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ *
  */
 
 package com.rackspace.salus.event.processor.engine;
@@ -24,6 +28,7 @@ import com.espertech.esper.common.client.util.NameAccessModifier;
 import com.espertech.esper.compiler.client.CompilerArguments;
 import com.espertech.esper.compiler.client.EPCompileException;
 import com.espertech.esper.compiler.client.EPCompilerProvider;
+import com.espertech.esper.runtime.client.DeploymentStateEvent;
 import com.espertech.esper.runtime.client.EPDeployException;
 import com.espertech.esper.runtime.client.EPDeployment;
 import com.espertech.esper.runtime.client.EPRuntime;
@@ -35,26 +40,51 @@ import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
 import com.rackspace.salus.event.processor.services.EsperEventsListener;
 import com.rackspace.salus.event.processor.services.StateEvaluator;
 import com.rackspace.salus.event.processor.services.TaskWarmthTracker;
+import com.rackspace.salus.telemetry.entities.EventEngineTask;
+import com.rackspace.salus.telemetry.repositories.EventEngineTaskRepository;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 @Slf4j
 @Service
 public class EsperEngine {
 
+
+  @Data
+  static class EsperTaskData {
+    String deploymentId;
+    EventEngineTask eventEngineTask;
+
+    public EsperTaskData(String deploymentId, EventEngineTask t) {
+      this.deploymentId = deploymentId;
+      this.eventEngineTask = t;
+    }
+  }
   private EPRuntime runtime;
   private Configuration config;
   private TaskWarmthTracker taskWarmthTracker;
   private EsperEventsListener esperEventsListener;
+  private final EventEngineTaskRepository eventEngineTaskRepository;
+  private Map<String, EsperTaskData> taskDataMap;
 
   @Autowired
   public EsperEngine(TaskWarmthTracker taskWarmthTracker,
-      EsperEventsListener esperEventsListener, Environment env) {
+      EsperEventsListener esperEventsListener, Environment env, EventEngineTaskRepository eventEngineTaskRepository) {
     this.taskWarmthTracker = taskWarmthTracker;
     this.esperEventsListener = esperEventsListener;
+    this.eventEngineTaskRepository = eventEngineTaskRepository;
 
     this.config = new Configuration();
     this.config.getCommon().addEventType(SalusEnrichedMetric.class);
@@ -75,7 +105,7 @@ public class EsperEngine {
     // this.config.getRuntime().getThreading().setInsertIntoDispatchPreserveOrder(false);
 
     this.runtime = EPRuntimeProvider.getDefaultRuntime(this.config);
-
+    taskDataMap = new HashMap<>();
     // don't deploy esper queries for tests; it is handled within each test
     if (!env.acceptsProfiles(Profiles.of("test"))) {
       initialize();
@@ -170,5 +200,30 @@ public class EsperEngine {
   public void sendMetric(EnrichedMetric metric) {
     log.trace("Sending metric to esper engine, {}", metric);
     runtime.getEventService().sendEventBean(metric, metric.getClass().getSimpleName());
+  }
+
+
+  private void addTask(EventEngineTask t) {
+    String taskId = t.getId().toString();
+    String tenantId = t.getTenantId();
+    String tagsString = t.getTaskParameters().getLabelSelector().entrySet().stream().
+        map(e -> "tags('" + e.getKey() + "')='" + e.getValue() + "'").
+        collect(Collectors.joining("and"));
+
+    String eplTemplate = "@name('{%s}:{%s}')\n" +
+        "insert into EntryWindow\n" +
+        "select MetricEvaluation.generateEnrichedMetric(metric, %s) from SalusEnrichedMetric(\n" +
+        "    monitoringSystem='salus' and\n" +
+        "    tenantId='%s' and %s) metric;";
+    String eplString = String.format(eplTemplate, tenantId, taskId, taskId, tenantId, tagsString);
+    EPStatement epStatement = compileAndDeployQuery(eplString);
+    taskDataMap.put(taskId, new EsperTaskData(epStatement.getDeploymentId(), t));
+
+  }
+  public void loadTasks() {
+    String tenantId = "aaaaaa";
+    Pageable p = PageRequest.of(1, 10);
+    Page<EventEngineTask> page = eventEngineTaskRepository.findByTenantId(tenantId, p);
+    page.get().forEach(this::addTask);
   }
 }

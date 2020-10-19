@@ -108,6 +108,8 @@ public class UniversalMetricHandler {
     List<EventEngineTask> tasksToUndeploy = new ArrayList<>();
     for (Integer partition : removedPartitions) {
       List<EventEngineTask> tasks = taskRepository.findByPartition(partition);
+      // TODO this might need to be pageable?
+      // Similar to https://github.com/racker/salus-telemetry-monitor-management/pull/219
       tasksToUndeploy.addAll(tasks);
     }
     log.info("TODO Remove tasks from {}", tasksToUndeploy);
@@ -124,6 +126,8 @@ public class UniversalMetricHandler {
     List<EventEngineTask> tasksToDeploy = new ArrayList<>();
     for (Integer partition : addedPartitions) {
       List<EventEngineTask> tasks = taskRepository.findByPartition(partition);
+      // TODO this might need to be pageable?
+      // Similar to https://github.com/racker/salus-telemetry-monitor-management/pull/219
       tasksToDeploy.addAll(tasks);
     }
     log.info("TODO deploy tasks from {}", tasksToDeploy);

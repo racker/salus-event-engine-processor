@@ -20,6 +20,10 @@
 
 package com.rackspace.salus.event.processor.engine;
 
+import static org.apache.commons.lang3.RandomStringUtils.randomAlphabetic;
+import static org.apache.commons.lang3.RandomStringUtils.randomAlphanumeric;
+import static org.apache.commons.lang3.RandomStringUtils.randomNumeric;
+
 import com.espertech.esper.common.client.EPCompiled;
 import com.espertech.esper.common.client.configuration.Configuration;
 import com.espertech.esper.common.client.fireandforget.EPFireAndForgetPreparedQuery;
@@ -43,10 +47,12 @@ import com.rackspace.salus.event.processor.services.TaskWarmthTracker;
 import com.rackspace.salus.telemetry.entities.EventEngineTask;
 import com.rackspace.salus.telemetry.repositories.EventEngineTaskRepository;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -116,6 +122,7 @@ public class EsperEngine {
     createWindows();
     createWindowLogic();
     createListeners();
+    loadTasks();
   }
 
   private void createWindows() {
@@ -209,12 +216,15 @@ public class EsperEngine {
     String tagsString = t.getTaskParameters().getLabelSelector().entrySet().stream().
         map(e -> "tags('" + e.getKey() + "')='" + e.getValue() + "'").
         collect(Collectors.joining("and"));
-
-    String eplTemplate = "@name('{%s}:{%s}')\n" +
+    // gbj remove:
+    tagsString = "";
+    String eplTemplate = "@name('%s:%s')\n" +
         "insert into EntryWindow\n" +
-        "select MetricEvaluation.generateEnrichedMetric(metric, %s) from SalusEnrichedMetric(\n" +
+        "select StateEvaluator.generateEnrichedMetric(metric, '%s') from SalusEnrichedMetric(\n" +
         "    monitoringSystem='salus' and\n" +
-        "    tenantId='%s' and %s) metric;";
+   //     "    tenantId='%s' and %s) metric;"; gbj restore
+        "    tenantId='%s' %s) metric;";
+
     String eplString = String.format(eplTemplate, tenantId, taskId, taskId, tenantId, tagsString);
     EPStatement epStatement = compileAndDeployQuery(eplString);
     taskDataMap.put(taskId, new EsperTaskData(epStatement.getDeploymentId(), t));
@@ -222,8 +232,40 @@ public class EsperEngine {
   }
   public void loadTasks() {
     String tenantId = "aaaaaa";
-    Pageable p = PageRequest.of(1, 10);
+    Pageable p = PageRequest.of(0, 10);
     Page<EventEngineTask> page = eventEngineTaskRepository.findByTenantId(tenantId, p);
+    log.info("gbj number of entries: " + page.getNumberOfElements());
     page.get().forEach(this::addTask);
+    log.info("gbj finished load.");
+    try {
+      Thread.sleep(5000);
+    } catch (java.lang.InterruptedException e) {};
+    sendEvents();
   }
-}
+
+  private static SalusEnrichedMetric buildMetric(String tenantId, String resourceId, Map<String, String> tags) {
+    SalusEnrichedMetric s =  new SalusEnrichedMetric();
+
+    s.setTenantId("aaaaaa")
+        .setMonitoringSystem("salus")
+        .setTags(tags != null ? tags : Map.of(
+            "os", "linux",
+            "metric", "something"));
+    return s;
+  }
+
+  public void sendEvents() {
+    int metricRange = 10;
+    SalusEnrichedMetric m1 = buildMetric(null, null, null);
+    SalusEnrichedMetric m2 = buildMetric(null, null, null);
+
+    // send {metricRange} dupes of m1
+    // send {metricRange} dupes of m2
+    IntStream.range(0, metricRange).forEach(i -> {
+      log.info("sending valid metric 1-{}", i);
+      runtime.getEventService().sendEventBean(m1, "SalusEnrichedMetric");
+      log.info("sending valid metric 2-{}", i);
+      runtime.getEventService().sendEventBean(m2, "SalusEnrichedMetric");
+    });
+  }
+  }

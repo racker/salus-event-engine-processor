@@ -33,12 +33,12 @@ public class StateEvaluator {
    * @param taskId
    * @return
    */
-  // TODO this is only an example of what will be used. It will be finalized in future PRs
   public static SalusEnrichedMetric generateEnrichedMetric(
       SalusEnrichedMetric metric, String taskId) {
     log.info("gbj was here: " + metric.getResourceId());
     return metric
         .setState("TODO fix this state")
+        .setTaskId(UUID.fromString(taskId))
         // TODO use metric timestamps instead of `now`` ?
         .setStateEvaluationTimestamp(Instant.now());
   }

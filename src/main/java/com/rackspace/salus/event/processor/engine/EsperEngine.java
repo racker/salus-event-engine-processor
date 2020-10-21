@@ -39,6 +39,8 @@ import com.espertech.esper.runtime.client.EPRuntime;
 import com.espertech.esper.runtime.client.EPRuntimeProvider;
 import com.espertech.esper.runtime.client.EPStatement;
 import com.espertech.esper.runtime.client.EPUndeployException;
+import com.google.protobuf.Timestamp;
+import com.rackspace.monplat.protocol.Metric;
 import com.rackspace.salus.event.processor.model.EnrichedMetric;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
 import com.rackspace.salus.event.processor.services.EsperEventsListener;
@@ -46,6 +48,7 @@ import com.rackspace.salus.event.processor.services.StateEvaluator;
 import com.rackspace.salus.event.processor.services.TaskWarmthTracker;
 import com.rackspace.salus.telemetry.entities.EventEngineTask;
 import com.rackspace.salus.telemetry.repositories.EventEngineTaskRepository;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -215,17 +218,15 @@ public class EsperEngine {
     String tenantId = t.getTenantId();
     String tagsString = t.getTaskParameters().getLabelSelector().entrySet().stream().
         map(e -> "tags('" + e.getKey() + "')='" + e.getValue() + "'").
-        collect(Collectors.joining("and"));
-    // gbj remove:
-    tagsString = "";
+        collect(Collectors.joining(" and "));
     String eplTemplate = "@name('%s:%s')\n" +
         "insert into EntryWindow\n" +
         "select StateEvaluator.generateEnrichedMetric(metric, '%s') from SalusEnrichedMetric(\n" +
         "    monitoringSystem='salus' and\n" +
-   //     "    tenantId='%s' and %s) metric;"; gbj restore
-        "    tenantId='%s' %s) metric;";
+        "    tenantId='%s' and %s) metric;";
 
     String eplString = String.format(eplTemplate, tenantId, taskId, taskId, tenantId, tagsString);
+    log.info("gbjepl is: " + eplString);
     EPStatement epStatement = compileAndDeployQuery(eplString);
     taskDataMap.put(taskId, new EsperTaskData(epStatement.getDeploymentId(), t));
 
@@ -244,13 +245,25 @@ public class EsperEngine {
   }
 
   private static SalusEnrichedMetric buildMetric(String tenantId, String resourceId, Map<String, String> tags) {
+    Timestamp timestamp = Timestamp.newBuilder().setSeconds(Instant.now().getEpochSecond()).build();
+    Metric part = Metric.newBuilder().setName("part").setInt(2).setTimestamp(timestamp).build();
+    Metric total = Metric.newBuilder().setName("total").setInt(10).setTimestamp(timestamp).build();
+    List<Metric> list = List.of(part, total);
     SalusEnrichedMetric s =  new SalusEnrichedMetric();
 
-    s.setTenantId("aaaaaa")
-        .setMonitoringSystem("salus")
-        .setTags(tags != null ? tags : Map.of(
+
+      s.setResourceId(resourceId != null ? resourceId : randomAlphanumeric(10))
+      .setMonitorId(UUID.randomUUID())
+      .setZoneId("dfw")
+      .setMonitorType("http")
+      .setMonitorSelectorScope("remote")
+      .setMonitoringSystem("salus")
+      .setTags(tags != null ? tags : Map.of(
             "os", "linux",
-            "metric", "something"));
+            "metric", "something"))
+      .setMetrics(list)
+      .setTenantId("aaaaaa");
+
     return s;
   }
 

@@ -16,14 +16,23 @@
 
 package com.rackspace.salus.event.processor.services;
 
+import com.rackspace.salus.event.processor.model.EsperTaskData;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
+import com.rackspace.salus.telemetry.entities.EventEngineTask;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class StateEvaluator {
+
+  private static Map<String, EsperTaskData> taskDataMap = new HashMap<>();
+
+  public static void saveTaskData(String taskId, String deploymentId, EventEngineTask task) {
+    taskDataMap.put(taskId, new EsperTaskData(deploymentId, task));
+  }
 
   /**
    * This method will be used within the Esper query that is added to the engine for each

@@ -71,22 +71,11 @@ import org.springframework.stereotype.Service;
 public class EsperEngine {
 
 
-  @Data
-  static class EsperTaskData {
-    String deploymentId;
-    EventEngineTask eventEngineTask;
-
-    public EsperTaskData(String deploymentId, EventEngineTask t) {
-      this.deploymentId = deploymentId;
-      this.eventEngineTask = t;
-    }
-  }
   private EPRuntime runtime;
   private Configuration config;
   private TaskWarmthTracker taskWarmthTracker;
   private EsperEventsListener esperEventsListener;
   private final EventEngineTaskRepository eventEngineTaskRepository;
-  private Map<String, EsperTaskData> taskDataMap;
 
   @Autowired
   public EsperEngine(TaskWarmthTracker taskWarmthTracker,
@@ -114,7 +103,6 @@ public class EsperEngine {
     // this.config.getRuntime().getThreading().setInsertIntoDispatchPreserveOrder(false);
 
     this.runtime = EPRuntimeProvider.getDefaultRuntime(this.config);
-    taskDataMap = new HashMap<>();
     // don't deploy esper queries for tests; it is handled within each test
     if (!env.acceptsProfiles(Profiles.of("test"))) {
       initialize();
@@ -228,7 +216,7 @@ public class EsperEngine {
     String eplString = String.format(eplTemplate, tenantId, taskId, taskId, tenantId, tagsString);
     log.info("gbjepl is: " + eplString);
     EPStatement epStatement = compileAndDeployQuery(eplString);
-    taskDataMap.put(taskId, new EsperTaskData(epStatement.getDeploymentId(), t));
+    StateEvaluator.saveTaskData(taskId, epStatement.getDeploymentId(), t);
 
   }
   public void loadTasks() {

@@ -1,5 +1,8 @@
 salus:
-  kafka-listener-auto-start: false
+  event-processor:
+    kafka-listener-auto-start: false
+    partition-assignment-delay: "PT5S"
+
 logging:
   level:
     com.rackspace.salus: debug

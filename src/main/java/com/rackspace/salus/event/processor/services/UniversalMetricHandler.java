@@ -21,7 +21,8 @@ import com.rackspace.monplat.protocol.UniversalMetricFrame.MonitoringSystem;
 import com.rackspace.salus.event.processor.engine.EsperEngine;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
 import com.rackspace.salus.telemetry.entities.EventEngineTask;
-import com.rackspace.salus.telemetry.repositories.EventEngineTaskRepository;
+import com.rackspace.salus.telemetry.entities.subtype.SalusEventEngineTask;
+import com.rackspace.salus.telemetry.repositories.SalusEventEngineTaskRepository;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -48,12 +49,14 @@ public class UniversalMetricHandler {
   private static final String SALUS_MONITOR_TYPE = "monitor_type";
   private static final String SALUS_MONITOR_SELECTOR_SCOPE = "monitor_selector_scope";
 
-  EsperEngine esperEngine;
-  EventEngineTaskRepository taskRepository;
+  private final EsperEngine esperEngine;
+  private final SalusEventEngineTaskRepository salusTaskRepository;
 
   @Autowired
-  public UniversalMetricHandler(EsperEngine esperEngine) {
+  public UniversalMetricHandler(EsperEngine esperEngine,
+      SalusEventEngineTaskRepository salusTaskRepository) {
     this.esperEngine = esperEngine;
+    this.salusTaskRepository = salusTaskRepository;
   }
 
   void processSalusMetricFrame(UniversalMetricFrame metric) throws IllegalArgumentException {
@@ -107,9 +110,7 @@ public class UniversalMetricHandler {
     // load from db and then undeploy
     List<EventEngineTask> tasksToUndeploy = new ArrayList<>();
     for (Integer partition : removedPartitions) {
-      List<EventEngineTask> tasks = taskRepository.findByPartition(partition);
-      // TODO this might need to be pageable?
-      // Similar to https://github.com/racker/salus-telemetry-monitor-management/pull/219
+      List<SalusEventEngineTask> tasks = salusTaskRepository.findByPartition(partition);
       tasksToUndeploy.addAll(tasks);
     }
     log.info("TODO Remove tasks from {}", tasksToUndeploy);
@@ -123,11 +124,9 @@ public class UniversalMetricHandler {
   public void deployTasksForPartitions(Set<Integer> addedPartitions) {
     log.info("Adding tasks to engine for {} partitions", addedPartitions.size());
     // load from db and then deploy
-    List<EventEngineTask> tasksToDeploy = new ArrayList<>();
+    List<SalusEventEngineTask> tasksToDeploy = new ArrayList<>();
     for (Integer partition : addedPartitions) {
-      List<EventEngineTask> tasks = taskRepository.findByPartition(partition);
-      // TODO this might need to be pageable?
-      // Similar to https://github.com/racker/salus-telemetry-monitor-management/pull/219
+      List<SalusEventEngineTask> tasks = salusTaskRepository.findByPartition(partition);
       tasksToDeploy.addAll(tasks);
     }
     log.info("TODO deploy tasks from {}", tasksToDeploy);

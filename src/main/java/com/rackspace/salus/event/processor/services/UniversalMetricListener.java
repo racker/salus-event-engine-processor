@@ -20,6 +20,7 @@ import com.google.common.collect.Sets;
 import com.rackspace.monplat.protocol.UniversalMetricFrame;
 import com.rackspace.monplat.protocol.UniversalMetricFrame.MonitoringSystem;
 import com.rackspace.salus.common.messaging.KafkaTopicProperties;
+import com.rackspace.salus.event.processor.config.AppProperties;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.Collections;
@@ -45,12 +46,12 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class UniversalMetricListener implements ConsumerSeekAware {
 
-  // todo make this a config parameter
-  public static final Duration partitionAssignmentDelay = Duration.ofSeconds(5);
+  // the time to wait before (un)deploying tasks from old/new assigned partitions
+  public final Duration partitionAssignmentDelay;
 
   private Set<Integer> trackedPartitions;
   private ScheduledFuture<?> scheduledPartitionChangeTask;
-  private final String consumerId;
+  private final String listenerId;
 
   ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor();
 
@@ -60,6 +61,7 @@ public class UniversalMetricListener implements ConsumerSeekAware {
 
   @Autowired
   public UniversalMetricListener(
+      AppProperties appProperties,
       UniversalMetricHandler handler,
       KafkaTopicProperties properties,
       KafkaListenerEndpointRegistry registry) {
@@ -67,7 +69,8 @@ public class UniversalMetricListener implements ConsumerSeekAware {
     this.topic = properties.getMetrics();
     this.registry = registry;
     this.trackedPartitions = Sets.newConcurrentHashSet();
-    this.consumerId = RandomStringUtils.randomAlphabetic(10);
+    this.listenerId = RandomStringUtils.randomAlphabetic(10);
+    this.partitionAssignmentDelay = appProperties.getPartitionAssignmentDelay();
   }
 
   /**
@@ -82,10 +85,10 @@ public class UniversalMetricListener implements ConsumerSeekAware {
   /**
    * This method is used by the __listener.topic magic in the KafkaListener
    *
-   * @return The unique consumerId
+   * @return The unique listenerId
    */
-  public String getConsumerId() {
-    return consumerId;
+  public String getListenerId() {
+    return listenerId;
   }
 
   /**
@@ -95,8 +98,8 @@ public class UniversalMetricListener implements ConsumerSeekAware {
    * @param metric The UniversalMetricFrame read from Kafka.
    */
   @KafkaListener(
-      autoStartup = "${salus.kafka-listener-auto-start:true}",
-      id = "#{__listener.consumerId}",
+      autoStartup = "${salus.event-processor.kafka-listener-auto-start:true}",
+      id = "#{__listener.listenerId}",
       groupId = "${spring.kafka.consumer.group-id}",
       topics = "#{__listener.topic}",
       // override the default partition assignor to limit reassignment overhead
@@ -112,7 +115,7 @@ public class UniversalMetricListener implements ConsumerSeekAware {
   public void onPartitionsAssigned(Map<TopicPartition, Long> assignments,
       ConsumerSeekCallback callback) {
     log.debug("Partitions Assigned to consumer={}: {}",
-        getConsumerId(),
+        getListenerId(),
         assignments.keySet().stream()
             .map(TopicPartition::partition)
             .collect(Collectors.toSet()));
@@ -123,7 +126,7 @@ public class UniversalMetricListener implements ConsumerSeekAware {
   @Override
   public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
     log.debug("Partitions Revoked from consumer={}: {}",
-        getConsumerId(),
+        getListenerId(),
         partitions.stream()
             .map(TopicPartition::partition)
             .collect(Collectors.toSet()));
@@ -164,7 +167,7 @@ public class UniversalMetricListener implements ConsumerSeekAware {
   }
 
   Set<Integer> getCurrentAssignedPartitions() {
-    MessageListenerContainer container = registry.getListenerContainer(consumerId);
+    MessageListenerContainer container = registry.getListenerContainer(listenerId);
     if (container == null) {
       return Collections.emptySet();
     }
@@ -183,10 +186,10 @@ public class UniversalMetricListener implements ConsumerSeekAware {
   }
 
   void stop() {
-    this.registry.getListenerContainer(consumerId).stop();
+    this.registry.getListenerContainer(listenerId).stop();
   }
 
   void start() {
-    this.registry.getListenerContainer(consumerId).start();
+    this.registry.getListenerContainer(listenerId).start();
   }
 }

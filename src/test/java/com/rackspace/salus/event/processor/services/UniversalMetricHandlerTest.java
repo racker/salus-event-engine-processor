@@ -18,12 +18,19 @@ package com.rackspace.salus.event.processor.services;
 
 import static com.rackspace.salus.event.processor.utils.TestDataGenerators.generateUniversalMetricFrame;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.rackspace.monplat.protocol.UniversalMetricFrame;
 import com.rackspace.salus.event.processor.engine.EsperEngine;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
+import com.rackspace.salus.telemetry.entities.subtype.SalusEventEngineTask;
 import com.rackspace.salus.telemetry.model.ConfigSelectorScope;
+import com.rackspace.salus.telemetry.repositories.SalusEventEngineTaskRepository;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -33,6 +40,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.junit4.SpringRunner;
+import uk.co.jemos.podam.api.PodamFactory;
+import uk.co.jemos.podam.api.PodamFactoryImpl;
 
 @RunWith(SpringRunner.class)
 @SpringBootTest(classes = {UniversalMetricHandler.class})
@@ -44,8 +53,13 @@ public class UniversalMetricHandlerTest {
   @MockBean
   EsperEngine esperEngine;
 
+  @MockBean
+  SalusEventEngineTaskRepository salusTaskRepository;
+
   @Captor
   ArgumentCaptor<SalusEnrichedMetric> salusMetricArg;
+
+  private PodamFactory podamFactory = new PodamFactoryImpl();
 
   @Test
   public void convertUniversalMetricToSalusMetricTest() {
@@ -81,5 +95,29 @@ public class UniversalMetricHandlerTest {
 
     SalusEnrichedMetric expectedMetric = handler.convertUniversalMetricToSalusMetric(universalMetric);
     assertThat(salusMetricArg.getValue()).isEqualTo(expectedMetric);
+  }
+
+  @Test
+  public void removeTasksForPartitionsTest() {
+    List<SalusEventEngineTask> tasksToRemove = podamFactory.manufacturePojo(ArrayList.class, SalusEventEngineTask.class);
+    when(salusTaskRepository.findByPartition(any()))
+        .thenReturn(tasksToRemove);
+
+    handler.removeTasksForPartitions(Set.of(2, 4));
+
+    verify(salusTaskRepository).findByPartition(2);
+    verify(salusTaskRepository).findByPartition(4);
+  }
+
+  @Test
+  public void deployTasksForPartitionsTest() {
+    List<SalusEventEngineTask> tasksToDeploy = podamFactory.manufacturePojo(ArrayList.class, SalusEventEngineTask.class);
+    when(salusTaskRepository.findByPartition(any()))
+        .thenReturn(tasksToDeploy);
+
+    handler.deployTasksForPartitions(Set.of(2, 4));
+
+    verify(salusTaskRepository).findByPartition(2);
+    verify(salusTaskRepository).findByPartition(4);
   }
 }

@@ -16,7 +16,6 @@
 
 package com.rackspace.salus.event.processor.services;
 
-import static com.rackspace.salus.event.processor.services.UniversalMetricListener.partitionAssignmentDelay;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.Mockito.reset;
@@ -25,11 +24,13 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import com.rackspace.salus.common.messaging.KafkaTopicProperties;
+import com.rackspace.salus.event.processor.config.AppProperties;
 import com.rackspace.salus.event.processor.services.UniversalMetricListenerTest.TestConfig;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,7 +51,9 @@ import org.springframework.test.context.junit4.SpringRunner;
 @EmbeddedKafka(partitions = 3, topics = {"telemetry.metrics.json"})
 @SpringBootTest(
     properties = "spring.kafka.bootstrap-servers=${spring.embedded.kafka.brokers}",
-    classes = {KafkaAutoConfiguration.class, TestConfig.class, KafkaTopicProperties.class})
+    classes = {
+        KafkaAutoConfiguration.class, TestConfig.class,
+        AppProperties.class, KafkaTopicProperties.class})
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 @ActiveProfiles("test")
 public class UniversalMetricListenerTest {
@@ -63,6 +66,9 @@ public class UniversalMetricListenerTest {
     @Autowired
     KafkaTopicProperties properties;
 
+    @Autowired
+    AppProperties appProperties;
+
     // all consumers will share a registry, but that's ok
     // because they only look up info in their unique container
     @Autowired
@@ -70,22 +76,24 @@ public class UniversalMetricListenerTest {
 
     @Bean
     UniversalMetricListener consumer1() {
-      return new UniversalMetricListener(handler, properties, registry);
+      return new UniversalMetricListener(appProperties, handler, properties, registry);
     }
 
     @Bean
     UniversalMetricListener consumer2() {
-      return new UniversalMetricListener(handler, properties, registry);
+      return new UniversalMetricListener(appProperties, handler, properties, registry);
     }
 
     @Bean
     UniversalMetricListener consumer3() {
-      return new UniversalMetricListener(handler, properties, registry);
+      return new UniversalMetricListener(appProperties, handler, properties, registry);
     }
   }
 
-  // increase the delay to help slow laptops running tests locally
-  long testTimeout = partitionAssignmentDelay.plus(Duration.ofSeconds(3)).toMillis();
+  @Autowired
+  AppProperties appProperties;
+
+  long testTimeout;
 
   @Autowired
   @Qualifier("consumer1")
@@ -101,6 +109,12 @@ public class UniversalMetricListenerTest {
 
   @MockBean
   UniversalMetricHandler handler;
+
+  @Before
+  public void setup() {
+    // increase the delay to help slow laptops running tests locally
+    testTimeout = appProperties.getPartitionAssignmentDelay().plus(Duration.ofSeconds(3)).toMillis();
+  }
 
   @Test
   public void testInitialStartup_1consumer() {

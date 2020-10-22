@@ -16,13 +16,20 @@
 
 package com.rackspace.salus.event.processor.services;
 
+import com.rackspace.monplat.protocol.Metric;
 import com.rackspace.salus.event.processor.model.EsperTaskData;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
 import com.rackspace.salus.telemetry.entities.EventEngineTask;
+import com.rackspace.salus.telemetry.model.MetricExpressionBase;
+import com.rackspace.salus.telemetry.model.PercentageEvalNode;
 import java.time.Instant;
+import java.util.AbstractMap;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import lombok.Data;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -42,14 +49,27 @@ public class StateEvaluator {
    * @param taskId
    * @return
    */
+
   public static SalusEnrichedMetric generateEnrichedMetric(
       SalusEnrichedMetric metric, String taskId) {
     log.info("gbj was here: " + metric.getResourceId());
+    EsperTaskData data = taskDataMap.get(taskId);
+    List<MetricExpressionBase> customMetrics = data.getEventEngineTask().getTaskParameters().getCustomMetrics();
+    StateEvaluator.MetricEvaluator evaluator = new StateEvaluator.MetricEvaluator(metric.getMetrics());
+    customMetrics.stream().map(m -> evaluator.eval(m));
+
     return metric
         .setState("TODO fix this state")
         .setTaskId(UUID.fromString(taskId))
         // TODO use metric timestamps instead of `now`` ?
         .setStateEvaluationTimestamp(Instant.now());
   }
-
+  @Data
+  static class MetricEvaluator {
+    @NonNull
+    private List<Metric> metrics;
+    Map.Entry<String, Double> eval(MetricExpressionBase node) {
+      return new AbstractMap.SimpleEntry<String, Double>(((PercentageEvalNode)node).getPart(), 1.0);
+    }
+  }
 }

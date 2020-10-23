@@ -227,7 +227,7 @@ public class EsperEngine {
     page.get().forEach(this::addTask);
     log.info("gbj finished load.");
     try {
-      Thread.sleep(5000);
+      Thread.sleep(2000);
     } catch (java.lang.InterruptedException e) {};
     sendEvents();
   }
@@ -236,7 +236,8 @@ public class EsperEngine {
     Timestamp timestamp = Timestamp.newBuilder().setSeconds(Instant.now().getEpochSecond()).build();
     Metric part = Metric.newBuilder().setName("part").setInt(2).setTimestamp(timestamp).build();
     Metric total = Metric.newBuilder().setName("total").setInt(10).setTimestamp(timestamp).build();
-    List<Metric> list = List.of(part, total);
+    Metric totalCpu = Metric.newBuilder().setName("total_cpu").setInt(1).setTimestamp(timestamp).build();
+    List<Metric> list = List.of(part, total, totalCpu);
     SalusEnrichedMetric s =  new SalusEnrichedMetric();
 
 

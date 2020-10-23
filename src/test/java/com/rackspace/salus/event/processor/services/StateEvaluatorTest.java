@@ -43,21 +43,80 @@ public class StateEvaluatorTest {
   }
 
   int threshold = 5;
-  ComparisonExpression lessThan = new ComparisonExpression()
+  List<ComparisonExpression> criticalList = List.of(
+    new ComparisonExpression()
       .setComparator(Comparator.LESS_THAN)
       .setValueName("total_cpu")
-      .setComparisonValue(9);
+      .setComparisonValue(threshold + 1 ),
+    new ComparisonExpression()
+      .setComparator(Comparator.LESS_THAN_OR_EQUAL_TO)
+      .setValueName("total_cpu")
+      .setComparisonValue(threshold),
+    new ComparisonExpression()
+      .setComparator(Comparator.GREATER_THAN)
+      .setValueName("total_cpu")
+      .setComparisonValue(threshold - 1),
+    new ComparisonExpression()
+      .setComparator(Comparator.GREATER_THAN_OR_EQUAL_TO)
+      .setValueName("total_cpu")
+      .setComparisonValue(threshold),
+    new ComparisonExpression()
+      .setComparator(Comparator.EQUAL_TO)
+      .setValueName("total_cpu")
+      .setComparisonValue(threshold),
+    new ComparisonExpression()
+      .setComparator(Comparator.NOT_EQUAL_TO)
+      .setValueName("total_cpu")
+      .setComparisonValue(threshold - 1 ));
+
+  List<ComparisonExpression> okList = List.of(
+    new ComparisonExpression()
+      .setComparator(Comparator.LESS_THAN)
+      .setValueName("total_cpu")
+      .setComparisonValue(threshold),
+    new ComparisonExpression()
+      .setComparator(Comparator.LESS_THAN_OR_EQUAL_TO)
+      .setValueName("total_cpu")
+      .setComparisonValue(threshold - 1),
+    new ComparisonExpression()
+      .setComparator(Comparator.GREATER_THAN)
+      .setValueName("total_cpu")
+      .setComparisonValue(threshold),
+    new ComparisonExpression()
+      .setComparator(Comparator.GREATER_THAN_OR_EQUAL_TO)
+      .setValueName("total_cpu")
+      .setComparisonValue(threshold + 1),
+    new ComparisonExpression()
+      .setComparator(Comparator.EQUAL_TO)
+      .setValueName("total_cpu")
+      .setComparisonValue(threshold - 1),
+    new ComparisonExpression()
+      .setComparator(Comparator.NOT_EQUAL_TO)
+      .setValueName("total_cpu")
+      .setComparisonValue(threshold));
+      
+
+  @Test
+  public void criticalTest() {
+    for (ComparisonExpression comparisonExpression : criticalList) {
+      String taskId = setTaskData(comparisonExpression);
+      SalusEnrichedMetric s = getSalusEnrichedMetric();
+      SalusEnrichedMetric generatedMetric = StateEvaluator.generateEnrichedMetric(s, taskId);
+      assertThat(generatedMetric.getState()).isEqualTo("CRITICAL");
+    }
+  }
 
 
   @Test
-  public void mainTest() {
-
-    String taskId = setTaskData(lessThan);
-    SalusEnrichedMetric s = getSalusEnrichedMetric();
-    SalusEnrichedMetric generatedMetric = StateEvaluator.generateEnrichedMetric(s, taskId);
-    assertThat(generatedMetric.getState()).isEqualTo("CRITICAL");
+  public void okTest() {
+    for (ComparisonExpression comparisonExpression : okList) {
+      String taskId = setTaskData(comparisonExpression);
+      SalusEnrichedMetric s = getSalusEnrichedMetric();
+      SalusEnrichedMetric generatedMetric = StateEvaluator.generateEnrichedMetric(s, taskId);
+      assertThat(generatedMetric.getState()).isEqualTo("OK");
+    }
   }
-
+  
   private SalusEnrichedMetric getSalusEnrichedMetric() {
     return getSalusEnrichedMetric("total_cpu", threshold);
   }

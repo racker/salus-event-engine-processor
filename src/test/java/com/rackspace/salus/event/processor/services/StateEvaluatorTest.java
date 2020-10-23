@@ -42,29 +42,44 @@ public class StateEvaluatorTest {
   public void setup() {
   }
 
+  int threshold = 5;
+  ComparisonExpression lessThan = new ComparisonExpression()
+      .setComparator(Comparator.LESS_THAN)
+      .setValueName("total_cpu")
+      .setComparisonValue(9);
+
+
   @Test
   public void mainTest() {
 
+    String taskId = setTaskData(lessThan);
+    SalusEnrichedMetric s = getSalusEnrichedMetric();
+    SalusEnrichedMetric generatedMetric = StateEvaluator.generateEnrichedMetric(s, taskId);
+    assertThat(generatedMetric.getState()).isEqualTo("CRITICAL");
+  }
+
+  private SalusEnrichedMetric getSalusEnrichedMetric() {
+    return getSalusEnrichedMetric("total_cpu", threshold);
+  }
+
+  private SalusEnrichedMetric getSalusEnrichedMetric(String name, int val) {
+    Timestamp timestamp = Timestamp.newBuilder().setSeconds(Instant.now().getEpochSecond()).build();
+    Metric m = Metric.newBuilder().setName(name).setInt(val).setTimestamp(timestamp).build();
+    List<Metric> list = List.of(m);
+    SalusEnrichedMetric s =  new SalusEnrichedMetric();
+    s.setMetrics(list);
+    return s;
+  }
+
+  private String setTaskData(ComparisonExpression comparisonExpression) {
     String taskId = UUID.randomUUID().toString();
-    ComparisonExpression c = new ComparisonExpression()
-        .setComparator(Comparator.LESS_THAN)
-        .setValueName("total_cpu")
-        .setComparisonValue(3);
+
     StateExpression expression = new StateExpression()
-        .setExpression(c)
+        .setExpression(comparisonExpression)
         .setState(TaskState.CRITICAL);
     EventEngineTaskParameters parameters = new EventEngineTaskParameters().setStateExpressions(List.of(expression));
     EventEngineTask task = new EventEngineTask().setTaskParameters(parameters);
     StateEvaluator.saveTaskData(taskId, "deploymentId", task);
-
-    Timestamp timestamp = Timestamp.newBuilder().setSeconds(Instant.now().getEpochSecond()).build();
-    Metric part = Metric.newBuilder().setName("part").setInt(2).setTimestamp(timestamp).build();
-    Metric total = Metric.newBuilder().setName("total").setInt(10).setTimestamp(timestamp).build();
-    Metric totalCpu = Metric.newBuilder().setName("total_cpu").setInt(1).setTimestamp(timestamp).build();
-    List<Metric> list = List.of(part, total, totalCpu);
-    SalusEnrichedMetric s =  new SalusEnrichedMetric();
-    s.setMetrics(list);
-    SalusEnrichedMetric generatedMetric = StateEvaluator.generateEnrichedMetric(s, taskId);
-    assertThat(generatedMetric.getState()).isEqualTo("CRITICAL");
+    return taskId;
   }
 }

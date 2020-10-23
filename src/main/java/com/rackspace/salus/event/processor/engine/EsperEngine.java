@@ -226,10 +226,11 @@ public class EsperEngine {
     log.info("gbj number of entries: " + page.getNumberOfElements());
     page.get().forEach(this::addTask);
     log.info("gbj finished load.");
-    try {
-      Thread.sleep(2000);
-    } catch (java.lang.InterruptedException e) {};
-    sendEvents();
+    // gbj remove:
+    // try {
+    //   Thread.sleep(2000);
+    // } catch (java.lang.InterruptedException e) {};
+    // sendEvents();
   }
 
   private static SalusEnrichedMetric buildMetric(String tenantId, String resourceId, Map<String, String> tags) {

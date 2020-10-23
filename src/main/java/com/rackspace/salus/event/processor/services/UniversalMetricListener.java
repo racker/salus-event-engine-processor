@@ -181,15 +181,38 @@ public class UniversalMetricListener implements ConsumerSeekAware {
         .collect(Collectors.toSet());
   }
 
+  /**
+   * Get the set of partitions the processor is handling tasks for.
+   *
+   * @return A set of partition ids.
+   */
   Set<Integer> getTrackedPartitions() {
     return this.trackedPartitions;
   }
 
+  /**
+   * Currently only used in tests.
+   */
   void stop() {
-    this.registry.getListenerContainer(listenerId).stop();
+    MessageListenerContainer container = registry.getListenerContainer(listenerId);
+    if (container != null) {
+      log.info("Stopping kafka listener container id={}", listenerId);
+      container.stop();
+    } else {
+      log.error("Could not stop kafka listener. No container found with id={}", listenerId);
+    }
   }
 
+  /**
+   * Currently only used in tests.
+   */
   void start() {
-    this.registry.getListenerContainer(listenerId).start();
+    MessageListenerContainer container = registry.getListenerContainer(listenerId);
+    if (container != null) {
+      log.info("Starting kafka listener container id={}", listenerId);
+      container.start();
+    } else {
+      log.error("Could not start kafka listener. No container found with id={}", listenerId);
+    }
   }
 }

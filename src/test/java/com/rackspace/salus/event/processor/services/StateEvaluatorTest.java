@@ -17,6 +17,7 @@
 package com.rackspace.salus.event.processor.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.google.protobuf.Timestamp;
 import com.rackspace.monplat.protocol.Metric;
@@ -205,6 +206,52 @@ public class StateEvaluatorTest {
     s = getSalusEnrichedMetric();
     generatedMetric = StateEvaluator.generateEnrichedMetric(s, taskId);
     assertThat(generatedMetric.getState()).isEqualTo("OK");
+  }
+
+
+  @Test
+  public void badParameterTest() {
+    // Test String expression with integer metric
+    assertThatThrownBy(() -> {
+      ComparisonExpression comparisonExpression = trueStringList.get(0);
+      String taskId = setTaskData(comparisonExpression);
+      SalusEnrichedMetric s = getSalusEnrichedMetric("banner", 3);
+      StateEvaluator.generateEnrichedMetric(s, taskId);})
+        .isInstanceOf(IllegalArgumentException.class);
+
+    // Test String expression with invalid integer comparisonValue type
+    assertThatThrownBy(() -> {
+      ComparisonExpression comparisonExpression =
+        new ComparisonExpression()
+        .setComparator(Comparator.REGEX_MATCH)
+        .setValueName("banner")
+        .setComparisonValue(1);
+
+      String taskId = setTaskData(comparisonExpression);
+      SalusEnrichedMetric s = getStringMetric("banner", "valid string");
+      StateEvaluator.generateEnrichedMetric(s, taskId);})
+        .isInstanceOf(IllegalArgumentException.class);
+
+    // Test Integer expression with string metric
+    assertThatThrownBy(() -> {
+      ComparisonExpression comparisonExpression = trueStringList.get(0);
+      String taskId = setTaskData(comparisonExpression);
+      SalusEnrichedMetric s = getStringMetric("total_cpu", "bad integer parameter");
+      StateEvaluator.generateEnrichedMetric(s, taskId);})
+        .isInstanceOf(IllegalArgumentException.class);
+
+    // Test Integer expression with invalid string comparisonValue type
+    assertThatThrownBy(() -> {
+      ComparisonExpression comparisonExpression =
+        new ComparisonExpression()
+        .setComparator(Comparator.LESS_THAN)
+        .setValueName("total_cpu")
+        .setComparisonValue("bad integer parameter");
+
+      String taskId = setTaskData(comparisonExpression);
+      SalusEnrichedMetric s = getSalusEnrichedMetric("total_cpu", 3);
+      StateEvaluator.generateEnrichedMetric(s, taskId);})
+        .isInstanceOf(IllegalArgumentException.class);
   }
 
   private SalusEnrichedMetric getSalusEnrichedMetric() {

@@ -25,6 +25,8 @@ import com.rackspace.salus.telemetry.entities.EventEngineTask;
 import com.rackspace.salus.telemetry.entities.EventEngineTaskParameters;
 import com.rackspace.salus.telemetry.entities.EventEngineTaskParameters.Comparator;
 import com.rackspace.salus.telemetry.entities.EventEngineTaskParameters.ComparisonExpression;
+import com.rackspace.salus.telemetry.entities.EventEngineTaskParameters.LogicalExpression;
+import com.rackspace.salus.telemetry.entities.EventEngineTaskParameters.LogicalExpression.Operator;
 import com.rackspace.salus.telemetry.entities.EventEngineTaskParameters.StateExpression;
 import com.rackspace.salus.telemetry.entities.EventEngineTaskParameters.TaskState;
 import java.time.Instant;
@@ -43,7 +45,7 @@ public class StateEvaluatorTest {
   }
 
   int threshold = 5;
-  List<ComparisonExpression> criticalList = List.of(
+  List<ComparisonExpression> trueList = List.of(
     new ComparisonExpression()
       .setComparator(Comparator.LESS_THAN)
       .setValueName("total_cpu")
@@ -69,7 +71,7 @@ public class StateEvaluatorTest {
       .setValueName("total_cpu")
       .setComparisonValue(threshold - 1 ));
 
-  List<ComparisonExpression> okList = List.of(
+  List<ComparisonExpression> falseList = List.of(
     new ComparisonExpression()
       .setComparator(Comparator.LESS_THAN)
       .setValueName("total_cpu")
@@ -94,11 +96,33 @@ public class StateEvaluatorTest {
       .setComparator(Comparator.NOT_EQUAL_TO)
       .setValueName("total_cpu")
       .setComparisonValue(threshold));
-      
+
+  List<ComparisonExpression> trueStringList = List.of(
+    new ComparisonExpression()
+      .setComparator(Comparator.REGEX_MATCH)
+      .setValueName("banner")
+      .setComparisonValue("a.*z"),
+    new ComparisonExpression()
+      .setComparator(Comparator.NOT_REGEX_MATCH)
+      .setValueName("banner")
+      .setComparisonValue("a.*1"));
+
+  List<ComparisonExpression> falseStringList = List.of(
+    new ComparisonExpression()
+      .setComparator(Comparator.REGEX_MATCH)
+      .setValueName("banner")
+      .setComparisonValue("a.*1"),
+    new ComparisonExpression()
+      .setComparator(Comparator.NOT_REGEX_MATCH)
+      .setValueName("banner")
+      .setComparisonValue("a.*z"));
+
+
 
   @Test
   public void criticalTest() {
-    for (ComparisonExpression comparisonExpression : criticalList) {
+    // critical is true for each
+    for (ComparisonExpression comparisonExpression : trueList) {
       String taskId = setTaskData(comparisonExpression);
       SalusEnrichedMetric s = getSalusEnrichedMetric();
       SalusEnrichedMetric generatedMetric = StateEvaluator.generateEnrichedMetric(s, taskId);
@@ -109,14 +133,80 @@ public class StateEvaluatorTest {
 
   @Test
   public void okTest() {
-    for (ComparisonExpression comparisonExpression : okList) {
+    // critical is false for each
+    for (ComparisonExpression comparisonExpression : falseList) {
       String taskId = setTaskData(comparisonExpression);
       SalusEnrichedMetric s = getSalusEnrichedMetric();
       SalusEnrichedMetric generatedMetric = StateEvaluator.generateEnrichedMetric(s, taskId);
       assertThat(generatedMetric.getState()).isEqualTo("OK");
     }
   }
-  
+
+  @Test
+  public void criticalStringTest() {
+    // critical is true for each
+    for (ComparisonExpression comparisonExpression : trueStringList) {
+      String taskId = setTaskData(comparisonExpression);
+      SalusEnrichedMetric s = getStringMetric("banner", "abcdz");
+      SalusEnrichedMetric generatedMetric = StateEvaluator.generateEnrichedMetric(s, taskId);
+      assertThat(generatedMetric.getState()).isEqualTo("CRITICAL");
+    }
+  }
+
+  @Test
+  public void okStringTest() {
+    // critical is false for each
+    for (ComparisonExpression comparisonExpression : falseStringList) {
+      String taskId = setTaskData(comparisonExpression);
+      SalusEnrichedMetric s = getStringMetric("banner", "abcdz");
+      SalusEnrichedMetric generatedMetric = StateEvaluator.generateEnrichedMetric(s, taskId);
+      assertThat(generatedMetric.getState()).isEqualTo("OK");
+    }
+  }
+
+  @Test
+  public void andTest() {
+    // true AND true is critical
+    String taskId = setLogicalTaskData(Operator.AND, trueList);
+    SalusEnrichedMetric s = getSalusEnrichedMetric();
+    SalusEnrichedMetric generatedMetric = StateEvaluator.generateEnrichedMetric(s, taskId);
+    assertThat(generatedMetric.getState()).isEqualTo("CRITICAL");
+
+    // true AND false is ok
+    taskId = setLogicalTaskData(Operator.AND, List.of(trueList.get(0), falseList.get(0)));
+    s = getSalusEnrichedMetric();
+    generatedMetric = StateEvaluator.generateEnrichedMetric(s, taskId);
+    assertThat(generatedMetric.getState()).isEqualTo("OK");
+
+    // fals AND false is ok
+    taskId = setLogicalTaskData(Operator.AND, falseList);
+    s = getSalusEnrichedMetric();
+    generatedMetric = StateEvaluator.generateEnrichedMetric(s, taskId);
+    assertThat(generatedMetric.getState()).isEqualTo("OK");
+  }
+
+
+  @Test
+  public void orTest() {
+    // true OR true is critical
+    String taskId = setLogicalTaskData(Operator.OR, trueList);
+    SalusEnrichedMetric s = getSalusEnrichedMetric();
+    SalusEnrichedMetric generatedMetric = StateEvaluator.generateEnrichedMetric(s, taskId);
+    assertThat(generatedMetric.getState()).isEqualTo("CRITICAL");
+
+    // true OR false is critical
+    taskId = setLogicalTaskData(Operator.OR, List.of(trueList.get(0), falseList.get(0)));
+    s = getSalusEnrichedMetric();
+    generatedMetric = StateEvaluator.generateEnrichedMetric(s, taskId);
+    assertThat(generatedMetric.getState()).isEqualTo("CRITICAL");
+
+    // ok OR ok is ok
+    taskId = setLogicalTaskData(Operator.OR, falseList);
+    s = getSalusEnrichedMetric();
+    generatedMetric = StateEvaluator.generateEnrichedMetric(s, taskId);
+    assertThat(generatedMetric.getState()).isEqualTo("OK");
+  }
+
   private SalusEnrichedMetric getSalusEnrichedMetric() {
     return getSalusEnrichedMetric("total_cpu", threshold);
   }
@@ -130,6 +220,15 @@ public class StateEvaluatorTest {
     return s;
   }
 
+  private SalusEnrichedMetric getStringMetric(String name, String val) {
+    Timestamp timestamp = Timestamp.newBuilder().setSeconds(Instant.now().getEpochSecond()).build();
+    Metric m = Metric.newBuilder().setName(name).setString(val).setTimestamp(timestamp).build();
+    List<Metric> list = List.of(m);
+    SalusEnrichedMetric s =  new SalusEnrichedMetric();
+    s.setMetrics(list);
+    return s;
+  }
+
   private String setTaskData(ComparisonExpression comparisonExpression) {
     String taskId = UUID.randomUUID().toString();
 
@@ -137,6 +236,21 @@ public class StateEvaluatorTest {
         .setExpression(comparisonExpression)
         .setState(TaskState.CRITICAL);
     EventEngineTaskParameters parameters = new EventEngineTaskParameters().setStateExpressions(List.of(expression));
+    EventEngineTask task = new EventEngineTask().setTaskParameters(parameters);
+    StateEvaluator.saveTaskData(taskId, "deploymentId", task);
+    return taskId;
+  }
+
+  private String setLogicalTaskData(Operator operator, List<ComparisonExpression> comparisonExpressions) {
+    String taskId = UUID.randomUUID().toString();
+    LogicalExpression logicalExpression = new LogicalExpression()
+        .setOperator(operator)
+        .setExpressions((List)comparisonExpressions);
+    StateExpression expression = new StateExpression()
+        .setExpression(logicalExpression)
+        .setState(TaskState.CRITICAL);
+    EventEngineTaskParameters parameters = new EventEngineTaskParameters()
+        .setStateExpressions(List.of(expression));
     EventEngineTask task = new EventEngineTask().setTaskParameters(parameters);
     StateEvaluator.saveTaskData(taskId, "deploymentId", task);
     return taskId;

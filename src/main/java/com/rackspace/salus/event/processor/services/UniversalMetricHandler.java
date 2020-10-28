@@ -124,7 +124,7 @@ public class UniversalMetricHandler {
   public void deployTasksForPartitions(Set<Integer> addedPartitions) {
     log.info("Adding tasks to engine for {} partitions", addedPartitions.size());
     // load from db and then deploy
-    List<SalusEventEngineTask> tasksToDeploy = new ArrayList<>();
+    List<EventEngineTask> tasksToDeploy = new ArrayList<>();
     for (Integer partition : addedPartitions) {
       List<SalusEventEngineTask> tasks = salusTaskRepository.findByPartition(partition);
       tasksToDeploy.addAll(tasks);

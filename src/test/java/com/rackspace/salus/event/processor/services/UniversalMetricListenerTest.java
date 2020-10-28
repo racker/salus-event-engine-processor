@@ -46,6 +46,15 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.junit4.SpringRunner;
 
+/**
+ * These tests verify the coming and going of different consumers.
+ *
+ * The partition re-assignment algorithm appears to be consistent which allows us to
+ * hardcode the assertion values in each test.
+ * Without that our assertions would have to be much more generalized.
+ *
+ * Test will fail if either the number of partitions or the partition strategy is changed.
+ */
 @Slf4j
 @RunWith(SpringRunner.class)
 @EmbeddedKafka(partitions = 3, topics = {"telemetry.metrics.json"})

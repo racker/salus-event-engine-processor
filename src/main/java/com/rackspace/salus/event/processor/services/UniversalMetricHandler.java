@@ -20,6 +20,12 @@ import com.rackspace.monplat.protocol.UniversalMetricFrame;
 import com.rackspace.monplat.protocol.UniversalMetricFrame.MonitoringSystem;
 import com.rackspace.salus.event.processor.engine.EsperEngine;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
+import com.rackspace.salus.telemetry.entities.EventEngineTask;
+import com.rackspace.salus.telemetry.entities.subtype.SalusEventEngineTask;
+import com.rackspace.salus.telemetry.repositories.SalusEventEngineTaskRepository;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,11 +49,14 @@ public class UniversalMetricHandler {
   private static final String SALUS_MONITOR_TYPE = "monitor_type";
   private static final String SALUS_MONITOR_SELECTOR_SCOPE = "monitor_selector_scope";
 
-  EsperEngine esperEngine;
+  private final EsperEngine esperEngine;
+  private final SalusEventEngineTaskRepository salusTaskRepository;
 
   @Autowired
-  public UniversalMetricHandler(EsperEngine esperEngine) {
+  public UniversalMetricHandler(EsperEngine esperEngine,
+      SalusEventEngineTaskRepository salusTaskRepository) {
     this.esperEngine = esperEngine;
+    this.salusTaskRepository = salusTaskRepository;
   }
 
   void processSalusMetricFrame(UniversalMetricFrame metric) throws IllegalArgumentException {
@@ -89,5 +98,37 @@ public class UniversalMetricHandler {
         .setTenantId(tenantId)
         .setAccountType(accountType)
         .setMetrics(universalMetric.getMetricsList());
+  }
+
+  /**
+   * Undeploys all tasks from esper related to the provided partitions.
+   *
+   * @param removedPartitions The partitions whose alarms will be undeployed.
+   */
+  public void removeTasksForPartitions(Set<Integer> removedPartitions) {
+    log.info("Removing tasks from engine for {} partitions", removedPartitions.size());
+    // load from db and then undeploy
+    List<EventEngineTask> tasksToUndeploy = new ArrayList<>();
+    for (Integer partition : removedPartitions) {
+      List<SalusEventEngineTask> tasks = salusTaskRepository.findByPartition(partition);
+      tasksToUndeploy.addAll(tasks);
+    }
+    log.info("TODO Remove tasks from {}", tasksToUndeploy);
+  }
+
+  /**
+   * Deploys all tasks to esper related to the provided partitions.
+   *
+   * @param addedPartitions The partitions whose alarms will be deployed.
+   */
+  public void deployTasksForPartitions(Set<Integer> addedPartitions) {
+    log.info("Adding tasks to engine for {} partitions", addedPartitions.size());
+    // load from db and then deploy
+    List<EventEngineTask> tasksToDeploy = new ArrayList<>();
+    for (Integer partition : addedPartitions) {
+      List<SalusEventEngineTask> tasks = salusTaskRepository.findByPartition(partition);
+      tasksToDeploy.addAll(tasks);
+    }
+    log.info("TODO deploy tasks from {}", tasksToDeploy);
   }
 }

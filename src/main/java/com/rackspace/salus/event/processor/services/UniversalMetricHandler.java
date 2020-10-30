@@ -52,6 +52,7 @@ public class UniversalMetricHandler {
   private final EsperEngine esperEngine;
   private final SalusEventEngineTaskRepository salusTaskRepository;
 
+  @SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection")
   @Autowired
   public UniversalMetricHandler(EsperEngine esperEngine,
       SalusEventEngineTaskRepository salusTaskRepository) {
@@ -76,8 +77,11 @@ public class UniversalMetricHandler {
     String accountType = universalMetric.getAccountType().toString();
 
     // TODO : utilize these in the metric payload once umb enrichment is populating the values
+    @SuppressWarnings("unused")
     String deviceId = universalMetric.getDeviceMetadataOrDefault(SALUS_DEVICE_ID_KEY, UNKNOWN_VALUE);
+    @SuppressWarnings("unused")
     String deviceName = universalMetric.getDeviceMetadataOrDefault(SALUS_DEVICE_NAME_KEY, UNKNOWN_VALUE);
+    @SuppressWarnings("unused")
     String deviceDc = universalMetric.getDeviceMetadataOrDefault(SALUS_DEVICE_DC_KEY, UNKNOWN_VALUE);
 
     String resourceId = universalMetric.getSystemMetadataOrThrow(SALUS_RESOURCE_ID_KEY);
@@ -113,7 +117,9 @@ public class UniversalMetricHandler {
       List<SalusEventEngineTask> tasks = salusTaskRepository.findByPartition(partition);
       tasksToUndeploy.addAll(tasks);
     }
-    log.info("TODO Remove tasks from {}", tasksToUndeploy);
+    for (EventEngineTask eventEngineTask : tasksToUndeploy) {
+      esperEngine.removeTask(eventEngineTask);
+    }
   }
 
   /**
@@ -129,6 +135,8 @@ public class UniversalMetricHandler {
       List<SalusEventEngineTask> tasks = salusTaskRepository.findByPartition(partition);
       tasksToDeploy.addAll(tasks);
     }
-    log.info("TODO deploy tasks from {}", tasksToDeploy);
+    for (SalusEventEngineTask salusEventEngineTask : tasksToDeploy) {
+      esperEngine.addTask(salusEventEngineTask);
+    }
   }
 }

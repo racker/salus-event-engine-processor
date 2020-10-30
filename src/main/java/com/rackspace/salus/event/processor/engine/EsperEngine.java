@@ -16,6 +16,8 @@
 
 package com.rackspace.salus.event.processor.engine;
 
+import static org.springframework.util.CollectionUtils.isEmpty;
+
 import com.espertech.esper.common.client.EPCompiled;
 import com.espertech.esper.common.client.configuration.Configuration;
 import com.espertech.esper.common.client.fireandforget.EPFireAndForgetPreparedQuery;
@@ -35,6 +37,9 @@ import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
 import com.rackspace.salus.event.processor.services.EsperEventsListener;
 import com.rackspace.salus.event.processor.services.StateEvaluator;
 import com.rackspace.salus.event.processor.services.TaskWarmthTracker;
+import com.rackspace.salus.telemetry.entities.EventEngineTask;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
@@ -45,10 +50,10 @@ import org.springframework.stereotype.Service;
 @Service
 public class EsperEngine {
 
-  private EPRuntime runtime;
-  private Configuration config;
+  private final EPRuntime runtime;
+  private final Configuration config;
   private TaskWarmthTracker taskWarmthTracker;
-  private EsperEventsListener esperEventsListener;
+  private final EsperEventsListener esperEventsListener;
 
   @Autowired
   public EsperEngine(TaskWarmthTracker taskWarmthTracker,
@@ -127,6 +132,7 @@ public class EsperEngine {
     }
   }
 
+  @SuppressWarnings("SameParameterValue")
   EPFireAndForgetQueryResult runOnDemandQuery(String epl) {
     return runOnDemandQuery(runtime, config, epl);
   }
@@ -170,5 +176,53 @@ public class EsperEngine {
   public void sendMetric(EnrichedMetric metric) {
     log.trace("Sending metric to esper engine, {}", metric);
     runtime.getEventService().sendEventBean(metric, metric.getClass().getSimpleName());
+  }
+
+  public String createTaskEpl(EventEngineTask t) {
+    String taskId = t.getId().toString();
+    String tenantId = t.getTenantId();
+    // create "tags('os')='linux' and tags('metric')='something'" string
+    Map<String, String> labelSelectors = t.getTaskParameters().getLabelSelector();
+    String tagsString = "";
+    if (!isEmpty(labelSelectors)) {
+      tagsString = t.getTaskParameters().getLabelSelector().entrySet().stream().
+        map(e -> "tags('" + e.getKey() + "')='" + e.getValue() + "'").
+        collect(Collectors.joining(" and "));
+      if (tagsString.length() > 0) {
+        tagsString = " and " + tagsString;
+      }
+    }
+    String eplTemplate = "@name('%s:%s')\n" +
+        "insert into EntryWindow\n" +
+        "select StateEvaluator.evalMetricState(metric, '%s') " +
+        "from SalusEnrichedMetric(" +
+        // TODO: fix monitoringSystem etc when other fields are added
+        "    monitoringSystem='SALUS' and\n" +
+        "    tenantId='%s'%s) metric;";
+
+    return String.format(eplTemplate, tenantId, taskId,
+        taskId, tenantId, tagsString);
+  }
+
+  public void addTask(EventEngineTask t) {
+    String taskId = t.getId().toString();
+    String eplString = createTaskEpl(t);
+    EPStatement epStatement = compileAndDeployQuery(eplString);
+    StateEvaluator.saveTaskData(taskId, epStatement.getDeploymentId(), t);
+    log.trace("Adding task for tenant={} task={}", t.getTenantId(), taskId);
+  }
+
+  public void removeTask(EventEngineTask t) {
+    String taskId = t.getId().toString();
+    String deploymentId = StateEvaluator.removeTaskData(taskId);
+    if (deploymentId != null) {
+      try {
+        runtime.getDeploymentService().undeploy(deploymentId);
+        log.trace("Removing task for tenant={} task={}", t.getTenantId(), taskId);
+      } catch (EPUndeployException e) {
+        log.trace("Exception removing task for tenant={} task={} exception message={}",
+          t.getTenantId(), taskId, e.getMessage());
+      }
+    }
   }
 }

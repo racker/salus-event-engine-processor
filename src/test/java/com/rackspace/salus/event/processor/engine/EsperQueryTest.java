@@ -18,6 +18,7 @@ package com.rackspace.salus.event.processor.engine;
 
 import static com.rackspace.salus.event.processor.utils.TestDataGenerators.createSalusEnrichedMetric;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.espertech.esper.common.client.fireandforget.EPFireAndForgetQueryResult;
 import com.espertech.esper.common.client.scopetest.EPAssertionUtil;
@@ -28,9 +29,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
 import com.rackspace.salus.event.processor.services.EsperEventsListener;
 import com.rackspace.salus.event.processor.services.TaskWarmthTracker;
+import com.rackspace.salus.telemetry.entities.EventEngineTaskParameters;
+import com.rackspace.salus.telemetry.entities.subtype.SalusEventEngineTask;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.apache.commons.lang3.SerializationUtils;
 import org.junit.After;
 import org.junit.Before;
@@ -117,7 +125,7 @@ public class EsperQueryTest {
             metric.getZoneId(), metric.getState(), 2});
 
     // sending a different taskId adds a new state count key
-    SalusEnrichedMetric newMetric = createSalusEnrichedMetric();;
+    SalusEnrichedMetric newMetric = createSalusEnrichedMetric();
     esperEngine.compileAndDeployQuery(getBasicInsertQuery(newMetric));
 
     esperEngine.sendMetric(newMetric);
@@ -190,6 +198,7 @@ public class EsperQueryTest {
     // a second event for a seen zone will trigger the listener
     esperEngine.sendMetric(metric1);
 
+    @SuppressWarnings("unchecked")
     Map<String, SalusEnrichedMetric[]> queryResponse =
         (HashMap<String, SalusEnrichedMetric[]>) listener.assertOneGetNewAndReset().getUnderlying();
     SalusEnrichedMetric[] metrics = queryResponse.get("eventsForTask");
@@ -199,6 +208,7 @@ public class EsperQueryTest {
     // a second event for the other zone should trigger a unique event for each zone to be seen
     esperEngine.sendMetric(metric2);
 
+    //noinspection unchecked
     queryResponse =
         (HashMap<String, SalusEnrichedMetric[]>) listener.assertOneGetNewAndReset().getUnderlying();
     metrics = queryResponse.get("eventsForTask");
@@ -227,5 +237,83 @@ public class EsperQueryTest {
         metric.getTenantId(),
         metric.getMonitorSelectorScope(),
         metric.getMonitorType());
+  }
+
+  @Test
+  public void testAddRemoveTask() throws EPUndeployException {
+    // we do not want to test anything beyond entry window so we can remove the connecting queries
+    esperEngine.undeploy("stateCountTableLogic");
+    esperEngine.undeploy("stateCountSatisfiedLogic");
+    SalusEnrichedMetric metric = createSalusEnrichedMetric();
+
+    SalusEventEngineTask eventEngineTask = getTask(metric);
+    esperEngine.addTask(eventEngineTask);
+
+
+    EPStatement stmt = esperEngine.compileAndDeployQuery(
+        "@Audit select * from EntryWindow");
+    SupportUpdateListener listener = new SupportUpdateListener();
+    stmt.addListener(listener);
+
+    esperEngine.sendMetric(metric);
+    // In preparation for remove test, confirm that the listener returns in less than 2 seconds
+    listener.waitForInvocation(2000);
+    EPAssertionUtil.assertProps(listener.assertOneGetNewAndReset(),
+        new String[]{"tenantId", "monitorId", "state"},
+        new Object[]{metric.getTenantId(), metric.getMonitorId(), metric.getState()});
+    esperEngine.removeTask(eventEngineTask);
+    esperEngine.sendMetric(metric);
+    // confirm that listener doesn't return because the task has been removed
+    assertThatThrownBy(() ->listener.waitForInvocation(2000))
+        .isInstanceOf(RuntimeException.class);
+  }
+
+  private SalusEventEngineTask getTask(SalusEnrichedMetric metric) {
+    EventEngineTaskParameters eventEngineTaskParameters = new EventEngineTaskParameters();
+    eventEngineTaskParameters.setLabelSelector(Map.of(
+        "os", "linux",
+        "dc", "private"));
+
+    SalusEventEngineTask eventEngineTask =
+        new SalusEventEngineTask();
+    eventEngineTask.setTaskParameters(eventEngineTaskParameters);
+    eventEngineTask.setId(metric.getTaskId()).setTenantId(metric.getTenantId());
+    return eventEngineTask;
+  }
+
+  @Test
+  public void testCreateTaskEPL() {
+    String tenantId = "123456";
+    SalusEnrichedMetric metric = createSalusEnrichedMetric()
+        .setTaskId(new UUID(0,0));
+    metric.setTenantId(tenantId);
+
+    String expectedStringStart =  "@name('123456:00000000-0000-0000-0000-000000000000')\n" +
+        "insert into EntryWindow\n" +
+        "select StateEvaluator.evalMetricState(metric, '00000000-0000-0000-0000-000000000000') " +
+        "from SalusEnrichedMetric(" +
+        "    monitoringSystem='SALUS' and\n" +
+        "    tenantId='123456'";
+
+    SalusEventEngineTask eventEngineTask = getTask(metric);
+    String eplString = esperEngine.createTaskEpl(eventEngineTask);
+
+    Pattern p = Pattern.compile(" and tags\\('(.*)'\\)='(.*)' and tags\\('(.*)'\\)='(.*)'\\) metric;");
+    Matcher m = p.matcher(eplString);
+    List<String> tagList = new ArrayList<>();
+    if (m.find()) {
+      tagList.add(m.group(1));
+      tagList.add(m.group(2));
+      tagList.add(m.group(3));
+      tagList.add(m.group(4));
+    }
+    assertThat(tagList).containsExactlyInAnyOrder("os", "linux", "dc","private");
+    assertThat(eplString.substring(0, expectedStringStart.length())).isEqualTo(expectedStringStart);
+
+    // Now confirm the tagless string is correct
+    eventEngineTask.getTaskParameters().setLabelSelector(null);
+    eplString = esperEngine.createTaskEpl(eventEngineTask);
+    String tagLessEndString = ") metric;";
+    assertThat(eplString).isEqualTo(expectedStringStart + tagLessEndString);
   }
 }

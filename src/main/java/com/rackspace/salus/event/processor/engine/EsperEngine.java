@@ -220,7 +220,7 @@ public class EsperEngine {
         runtime.getDeploymentService().undeploy(deploymentId);
         log.trace("Removing task for tenant={} task={}", t.getTenantId(), taskId);
       } catch (EPUndeployException e) {
-        log.trace("Exception removing task for tenant={} task={}, exception message={}",
+        log.trace("Exception removing task for tenant={} task={} exception message={}",
           t.getTenantId(), taskId, e.getMessage());
       }
     }

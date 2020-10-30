@@ -135,8 +135,8 @@ public class UniversalMetricHandler {
       List<SalusEventEngineTask> tasks = salusTaskRepository.findByPartition(partition);
       tasksToDeploy.addAll(tasks);
     }
-    for (SalusEventEngineTask salusEventEngineTask : tasksToDeploy) {
-      esperEngine.addTask(salusEventEngineTask);
+    for (EventEngineTask eventEngineTask : tasksToDeploy) {
+      esperEngine.addTask(eventEngineTask);
     }
   }
 }

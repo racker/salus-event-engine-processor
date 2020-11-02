@@ -19,9 +19,13 @@ package com.rackspace.salus.event.processor.services;
 import static com.rackspace.salus.event.processor.utils.TestDataGenerators.generateUniversalMetricFrame;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
+import com.espertech.esper.runtime.client.EPUndeployException;
 import com.rackspace.monplat.protocol.UniversalMetricFrame;
 import com.rackspace.salus.event.processor.engine.EsperEngine;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
@@ -98,7 +102,7 @@ public class UniversalMetricHandlerTest {
   }
 
   @Test
-  public void removeTasksForPartitionsTest() {
+  public void removeTasksForPartitionsTest() throws EPUndeployException {
     List<SalusEventEngineTask> tasksToRemove = podamFactory.manufacturePojo(ArrayList.class, SalusEventEngineTask.class);
     when(salusTaskRepository.findByPartition(any()))
         .thenReturn(tasksToRemove);
@@ -107,6 +111,14 @@ public class UniversalMetricHandlerTest {
 
     verify(salusTaskRepository).findByPartition(2);
     verify(salusTaskRepository).findByPartition(4);
+
+    // each removed partition should return 5 each
+    verify(esperEngine, times(10)).removeTask(argThat(eventEngineTask -> {
+      assertThat(eventEngineTask).isIn(tasksToRemove);
+      return true;
+    }));
+
+    verifyNoMoreInteractions(esperEngine, salusTaskRepository);
   }
 
   @Test
@@ -119,5 +131,13 @@ public class UniversalMetricHandlerTest {
 
     verify(salusTaskRepository).findByPartition(2);
     verify(salusTaskRepository).findByPartition(4);
+
+    // each added partition should return 5 each
+    verify(esperEngine, times(10)).addTask(argThat(eventEngineTask -> {
+      assertThat(eventEngineTask).isIn(tasksToDeploy);
+      return true;
+    }));
+
+    verifyNoMoreInteractions(esperEngine, salusTaskRepository);
   }
 }

@@ -212,7 +212,7 @@ public class EsperEngine {
         "from SalusEnrichedMetric(" +
         // TODO: fix monitoringSystem etc when other fields are added
         "    monitoringSystem='salus' and\n" +
-        "    tenantId='%s'%s).std:groupwin(tenantId, resourceId, monitorId, taskId, zoneId).win:length(2) metric;";
+        "    tenantId='%s'%s).std:groupwin(tenantId, resourceId, monitorId, taskId, zoneId).win:length(2) metric where prev(1, metric) is not null;";
 
     return String.format(eplTemplate, tenantId, taskId,
         taskId, tenantId, tagsString);
@@ -260,7 +260,7 @@ public class EsperEngine {
     Timestamp timestamp = Timestamp.newBuilder().setSeconds(Instant.now().getEpochSecond()).build();
     Metric part = Metric.newBuilder().setName("part").setInt(2).setTimestamp(timestamp).build();
     Metric total = Metric.newBuilder().setName("total").setInt(10).setTimestamp(timestamp).build();
-    Metric totalCpu = Metric.newBuilder().setName("total_cpu").setInt(1).setTimestamp(timestamp).build();
+    Metric totalCpu = Metric.newBuilder().setName("total_cpu").setInt(5).setTimestamp(timestamp).build();
     List<Metric> list = List.of(part, total, totalCpu);
     SalusEnrichedMetric s =  new SalusEnrichedMetric();
 

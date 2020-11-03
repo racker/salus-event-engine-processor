@@ -211,7 +211,7 @@ public class EsperEngine {
         "select StateEvaluator.evalMetricState(metric, prev(1, metric), '%s') " +
         "from SalusEnrichedMetric(" +
         // TODO: fix monitoringSystem etc when other fields are added
-        "    monitoringSystem='SALUS' and\n" +
+        "    monitoringSystem='salus' and\n" +
         "    tenantId='%s'%s).std:groupwin(tenantId, resourceId, monitorId, taskId, zoneId).win:length(2) metric;";
 
     return String.format(eplTemplate, tenantId, taskId,

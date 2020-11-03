@@ -32,18 +32,28 @@ import com.espertech.esper.runtime.client.EPRuntime;
 import com.espertech.esper.runtime.client.EPRuntimeProvider;
 import com.espertech.esper.runtime.client.EPStatement;
 import com.espertech.esper.runtime.client.EPUndeployException;
+import com.google.protobuf.Timestamp;
+import com.rackspace.monplat.protocol.Metric;
 import com.rackspace.salus.event.processor.model.EnrichedMetric;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
 import com.rackspace.salus.event.processor.services.EsperEventsListener;
 import com.rackspace.salus.event.processor.services.StateEvaluator;
 import com.rackspace.salus.event.processor.services.TaskWarmthTracker;
 import com.rackspace.salus.telemetry.entities.EventEngineTask;
+import com.rackspace.salus.telemetry.repositories.EventEngineTaskRepository;
+import java.time.Instant;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -53,13 +63,15 @@ public class EsperEngine {
   private final EPRuntime runtime;
   private final Configuration config;
   private TaskWarmthTracker taskWarmthTracker;
-  private final EsperEventsListener esperEventsListener;
+  private EsperEventsListener esperEventsListener;
+  private final EventEngineTaskRepository eventEngineTaskRepository;
 
   @Autowired
   public EsperEngine(TaskWarmthTracker taskWarmthTracker,
-      EsperEventsListener esperEventsListener, Environment env) {
+      EsperEventsListener esperEventsListener, Environment env, EventEngineTaskRepository eventEngineTaskRepository) {
     this.taskWarmthTracker = taskWarmthTracker;
     this.esperEventsListener = esperEventsListener;
+    this.eventEngineTaskRepository = eventEngineTaskRepository;
 
     this.config = new Configuration();
     this.config.getCommon().addEventType(SalusEnrichedMetric.class);
@@ -91,6 +103,8 @@ public class EsperEngine {
     createWindows();
     createWindowLogic();
     createListeners();
+    loadTasks();
+    
   }
 
   private void createWindows() {
@@ -194,11 +208,11 @@ public class EsperEngine {
     }
     String eplTemplate = "@name('%s:%s')\n" +
         "insert into EntryWindow\n" +
-        "select StateEvaluator.evalMetricState(metric, '%s') " +
+        "select StateEvaluator.evalMetricState(metric, prev(1, metric), '%s') " +
         "from SalusEnrichedMetric(" +
         // TODO: fix monitoringSystem etc when other fields are added
         "    monitoringSystem='SALUS' and\n" +
-        "    tenantId='%s'%s) metric;";
+        "    tenantId='%s'%s).std:groupwin(tenantId, resourceId, monitorId, taskId, zoneId).win:length(2) metric;";
 
     return String.format(eplTemplate, tenantId, taskId,
         taskId, tenantId, tagsString);
@@ -225,4 +239,60 @@ public class EsperEngine {
       }
     }
   }
+
+
+  public void loadTasks() {
+    String tenantId = "aaaaaa";
+    Pageable p = PageRequest.of(0, 10);
+    Page<EventEngineTask> page = eventEngineTaskRepository.findByTenantId(tenantId, p);
+    log.info("gbj number of entries: " + page.getNumberOfElements());
+    page.get().forEach(this::addTask);
+    log.info("gbj finished load.");
+    // gbj remove:
+    try {
+      Thread.sleep(2000);
+    } catch (java.lang.InterruptedException e) {};
+    sendEvents();
+  }
+
+  private static UUID myuuid = UUID.randomUUID();
+  private static SalusEnrichedMetric buildMetric(String tenantId, String resourceId, Map<String, String> tags) {
+    Timestamp timestamp = Timestamp.newBuilder().setSeconds(Instant.now().getEpochSecond()).build();
+    Metric part = Metric.newBuilder().setName("part").setInt(2).setTimestamp(timestamp).build();
+    Metric total = Metric.newBuilder().setName("total").setInt(10).setTimestamp(timestamp).build();
+    Metric totalCpu = Metric.newBuilder().setName("total_cpu").setInt(1).setTimestamp(timestamp).build();
+    List<Metric> list = List.of(part, total, totalCpu);
+    SalusEnrichedMetric s =  new SalusEnrichedMetric();
+
+
+      s.setResourceId("my-resource")
+      .setMonitorId(myuuid)
+      .setZoneId("dfw")
+      .setMonitorType("http")
+      .setMonitorSelectorScope("remote")
+      .setMonitoringSystem("salus")
+      .setTags(tags != null ? tags : Map.of(
+            "os", "linux",
+            "metric", "something"))
+      .setMetrics(list)
+      .setTenantId("aaaaaa");
+
+    return s;
+  }
+
+  public void sendEvents() {
+    int metricRange = 10;
+    SalusEnrichedMetric m1 = buildMetric(null, null, null);
+    SalusEnrichedMetric m2 = buildMetric(null, null, null);
+
+    // send {metricRange} dupes of m1
+    // send {metricRange} dupes of m2
+    IntStream.range(0, metricRange).forEach(i -> {
+      log.info("sending valid metric 1-{}", i);
+      runtime.getEventService().sendEventBean(m1, "SalusEnrichedMetric");
+      log.info("sending valid metric 2-{}", i);
+      runtime.getEventService().sendEventBean(m2, "SalusEnrichedMetric");
+    });
+  }
+
 }

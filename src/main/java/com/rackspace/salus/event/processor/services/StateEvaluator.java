@@ -89,8 +89,10 @@ public class StateEvaluator {
   }
 
   public static SalusEnrichedMetric evalMetricState(SalusEnrichedMetric metric, SalusEnrichedMetric prevMetric, String taskId) {
+    if (prevMetric != null)
       log.info("gbjprv3:" + prevMetric.getState());
-  
+    else
+      log.info("gbjnull.");
     EsperTaskData data = taskDataMap.get(taskId);
 
     //prep custom metrics

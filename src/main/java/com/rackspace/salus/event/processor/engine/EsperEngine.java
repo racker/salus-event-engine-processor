@@ -214,7 +214,7 @@ public class EsperEngine {
         "from SalusEnrichedMetric(" +
         // TODO: fix monitoringSystem etc when other fields are added
         "    monitoringSystem='salus' and\n" +
-        "    tenantId='%s'%s)";
+        "    tenantId='%s'%s) metric";
 
     String eplPrevTemplate = "@name('%s:%s')\n" +
         "insert into EntryWindow\n" +

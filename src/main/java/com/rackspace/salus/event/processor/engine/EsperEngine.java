@@ -42,6 +42,8 @@ import com.rackspace.salus.event.processor.services.TaskWarmthTracker;
 import com.rackspace.salus.telemetry.entities.EventEngineTask;
 import com.rackspace.salus.telemetry.repositories.EventEngineTaskRepository;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -206,16 +208,32 @@ public class EsperEngine {
         tagsString = " and " + tagsString;
       }
     }
-    String eplTemplate = "@name('%s:%s')\n" +
+    String eplRegularTemplate = "@name('%s:%s')\n" +
+        "insert into EntryWindow\n" +
+        "select StateEvaluator.evalMetricState(metric, null, '%s') " +
+        "from SalusEnrichedMetric(" +
+        // TODO: fix monitoringSystem etc when other fields are added
+        "    monitoringSystem='salus' and\n" +
+        "    tenantId='%s'%s)";
+
+    String eplPrevTemplate = "@name('%s:%s')\n" +
         "insert into EntryWindow\n" +
         "select StateEvaluator.evalMetricState(metric, prev(1, metric), '%s') " +
         "from SalusEnrichedMetric(" +
         // TODO: fix monitoringSystem etc when other fields are added
         "    monitoringSystem='salus' and\n" +
         "    tenantId='%s'%s).std:groupwin(tenantId, resourceId, monitorId, taskId, zoneId).win:length(2) metric where prev(1, metric) is not null;";
+     String eplTemplate;
 
-    return String.format(eplTemplate, tenantId, taskId,
-        taskId, tenantId, tagsString);
+     if (StateEvaluator.includePrev(t)) {
+       eplTemplate = eplPrevTemplate;
+     } else {
+       eplTemplate = eplRegularTemplate;
+     }
+
+     return String.format(eplTemplate, tenantId, taskId,
+       taskId, tenantId, tagsString);
+
   }
 
   public void addTask(EventEngineTask t) {
@@ -255,13 +273,19 @@ public class EsperEngine {
     sendEvents();
   }
 
+  static long timeCount = Instant.now().getEpochSecond() - 600;
+  static int totalCount;
   private static UUID myuuid = UUID.randomUUID();
   private static SalusEnrichedMetric buildMetric(String tenantId, String resourceId, Map<String, String> tags) {
-    Timestamp timestamp = Timestamp.newBuilder().setSeconds(Instant.now().getEpochSecond()).build();
+    Timestamp timestamp = Timestamp.newBuilder().setSeconds(timeCount).build();
+    timeCount += 60;
     Metric part = Metric.newBuilder().setName("part").setInt(2).setTimestamp(timestamp).build();
-    Metric total = Metric.newBuilder().setName("total").setInt(10).setTimestamp(timestamp).build();
+    Metric total = Metric.newBuilder().setName("total").setInt(totalCount).setTimestamp(timestamp).build();
+    totalCount += 120;
     Metric totalCpu = Metric.newBuilder().setName("total_cpu").setInt(5).setTimestamp(timestamp).build();
-    List<Metric> list = List.of(part, total, totalCpu);
+ //   List<Metric> list = List.of(part, total, totalCpu);
+    List<Metric> list = new ArrayList<Metric>(Arrays.asList(part, total, totalCpu));
+ 
     SalusEnrichedMetric s =  new SalusEnrichedMetric();
 
 
@@ -289,9 +313,9 @@ public class EsperEngine {
     // send {metricRange} dupes of m2
     IntStream.range(0, metricRange).forEach(i -> {
       log.info("sending valid metric 1-{}", i);
-      runtime.getEventService().sendEventBean(m1, "SalusEnrichedMetric");
-      log.info("sending valid metric 2-{}", i);
-      runtime.getEventService().sendEventBean(m2, "SalusEnrichedMetric");
+      runtime.getEventService().sendEventBean(buildMetric(null, null, null), "SalusEnrichedMetric");
+//      log.info("sending valid metric 2-{}", i);
+//      runtime.getEventService().sendEventBean(m2, "SalusEnrichedMetric");
     });
   }
 

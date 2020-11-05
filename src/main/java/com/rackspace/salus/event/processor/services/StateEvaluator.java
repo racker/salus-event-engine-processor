@@ -31,6 +31,7 @@ import com.rackspace.salus.telemetry.entities.EventEngineTaskParameters.StateExp
 import com.rackspace.salus.telemetry.entities.EventEngineTaskParameters.TaskState;
 import com.rackspace.salus.telemetry.model.MetricExpressionBase;
 import com.rackspace.salus.telemetry.model.PercentageEvalNode;
+import com.rackspace.salus.telemetry.model.DerivativeNode;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -103,7 +104,7 @@ public class StateEvaluator {
     if (customMetrics != null) {
       for (MetricExpressionBase customMetric : customMetrics) {
         try {
-          evaluatedCustomMetricList.add(evalCustomMetric(customMetric, metricList));
+          evaluatedCustomMetricList.add(evalCustomMetric(customMetric, metricList, prevMetric.getMetrics()));
         } catch (IllegalArgumentException e) {
           log.warn("Bad metric parameter used: {}", e.getMessage());
           return setMetricFields(metric, "CRITICAL", taskId);
@@ -255,15 +256,21 @@ public class StateEvaluator {
     }
   }
 
-  // Generate the synthetic metrics, (currently just percent)
-  static private Metric evalCustomMetric(MetricExpressionBase node, List<Metric>metrics) {
+  // Generate the synthetic metrics, (currently just percent and rate)
+  static private Metric evalCustomMetric(MetricExpressionBase node, List<Metric>metrics, List<Metric>prevMetrics) {
+    if (node instanceof PercentageEvalNode) {
+      return evalCustomMetric((PercentageEvalNode)node, metrics);
+    } else if (node instanceof DerivativeNode) {
+      return evalCustomMetric((DerivativeNode)node, metrics, prevMetrics);
+    } else {
+      throw new IllegalArgumentException("percent is the only custom metric currently supported.");
+    }
+  }
+
+  static private Metric evalCustomMetric(PercentageEvalNode percentageEvalNode, List<Metric>metrics) {
     Double part = null, total = null;
     double percentage;
     Timestamp timestamp = null;
-    if (!(node instanceof PercentageEvalNode)) {
-      throw new IllegalArgumentException("percent is the only custom metric currently supported.");
-    }
-    PercentageEvalNode percentageEvalNode = (PercentageEvalNode)node;
     // get the partial value
     for (Metric metric : metrics) {
       if (part == null) {
@@ -285,5 +292,52 @@ public class StateEvaluator {
       }
     }
     throw new IllegalArgumentException("percentage part/total not found in metric.");
+  }
+
+  static private Metric evalCustomMetric(DerivativeNode node, List<Metric>metrics, List<Metric>prevMetrics) {
+    Timestamp timestamp = null, oldTimestamp = null;
+    Double metricValue = null, oldMetricValue = null;
+    for (Metric metric : metrics) {
+      metricValue = getNumericOperandFromMetric(metric, node.getMetric());
+      if (metricValue != null) {
+        timestamp = metric.getTimestamp();
+        break;
+      }
+    }
+    for (Metric metric : prevMetrics) {
+      oldMetricValue = getNumericOperandFromMetric(metric, node.getMetric());
+      if (oldMetricValue != null) {
+        oldTimestamp = metric.getTimestamp();
+        break;
+      }
+    }
+    // calculate the rate
+    if (metricValue != null && oldMetricValue != null) {
+      // get rate per second
+      double rate = (metricValue - oldMetricValue)/(timestamp.getSeconds() - oldTimestamp.getSeconds());
+      // convert to rate per duration
+      rate = rate * node.getDuration().getSeconds();
+      log.info("gbjrate: " + rate);
+      return Metric
+              .newBuilder()
+              .setName(node.getAs())
+              .setFloat(rate)
+              .setTimestamp(timestamp).build();
+    } else {
+      throw new IllegalArgumentException("Metric not found: " + node.getMetric());
+    }
+  }
+
+  public static boolean includePrev(EventEngineTask task) {
+    List<MetricExpressionBase> customMetrics = task.getTaskParameters().getCustomMetrics();
+    if (customMetrics == null) {
+      return false;
+    }
+    for (MetricExpressionBase customMetric : customMetrics) {
+      if (customMetric instanceof DerivativeNode ) {
+        return true;
+      }
+    }
+    return false;
   }
 }

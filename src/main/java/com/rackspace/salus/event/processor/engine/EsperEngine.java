@@ -40,7 +40,6 @@ import com.rackspace.salus.event.processor.services.EsperEventsListener;
 import com.rackspace.salus.event.processor.services.StateEvaluator;
 import com.rackspace.salus.event.processor.services.TaskWarmthTracker;
 import com.rackspace.salus.telemetry.entities.EventEngineTask;
-import com.rackspace.salus.telemetry.repositories.EventEngineTaskRepository;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -65,15 +64,13 @@ public class EsperEngine {
   private final EPRuntime runtime;
   private final Configuration config;
   private TaskWarmthTracker taskWarmthTracker;
-  private EsperEventsListener esperEventsListener;
-  private final EventEngineTaskRepository eventEngineTaskRepository;
+  private final EsperEventsListener esperEventsListener;
 
   @Autowired
   public EsperEngine(TaskWarmthTracker taskWarmthTracker,
-      EsperEventsListener esperEventsListener, Environment env, EventEngineTaskRepository eventEngineTaskRepository) {
+      EsperEventsListener esperEventsListener, Environment env) {
     this.taskWarmthTracker = taskWarmthTracker;
     this.esperEventsListener = esperEventsListener;
-    this.eventEngineTaskRepository = eventEngineTaskRepository;
 
     this.config = new Configuration();
     this.config.getCommon().addEventType(SalusEnrichedMetric.class);
@@ -105,8 +102,6 @@ public class EsperEngine {
     createWindows();
     createWindowLogic();
     createListeners();
-    loadTasks();
-    
   }
 
   private void createWindows() {
@@ -213,15 +208,15 @@ public class EsperEngine {
         "select StateEvaluator.evalMetricState(metric, null, '%s') " +
         "from SalusEnrichedMetric(" +
         // TODO: fix monitoringSystem etc when other fields are added
-        "    monitoringSystem='salus' and\n" +
-        "    tenantId='%s'%s) metric";
+        "    monitoringSystem='SALUS' and\n" +
+        "    tenantId='%s'%s) metric;";
 
     String eplPrevTemplate = "@name('%s:%s')\n" +
         "insert into EntryWindow\n" +
         "select StateEvaluator.evalMetricState(metric, prev(1, metric), '%s') " +
         "from SalusEnrichedMetric(" +
         // TODO: fix monitoringSystem etc when other fields are added
-        "    monitoringSystem='salus' and\n" +
+        "    monitoringSystem='SALUS' and\n" +
         "    tenantId='%s'%s).std:groupwin(tenantId, resourceId, monitorId, taskId, zoneId).win:length(2) metric where prev(1, metric) is not null;";
      String eplTemplate;
 
@@ -257,66 +252,4 @@ public class EsperEngine {
       }
     }
   }
-
-
-  public void loadTasks() {
-    String tenantId = "aaaaaa";
-    Pageable p = PageRequest.of(0, 10);
-    Page<EventEngineTask> page = eventEngineTaskRepository.findByTenantId(tenantId, p);
-    log.info("gbj number of entries: " + page.getNumberOfElements());
-    page.get().forEach(this::addTask);
-    log.info("gbj finished load.");
-    // gbj remove:
-    try {
-      Thread.sleep(2000);
-    } catch (java.lang.InterruptedException e) {};
-    sendEvents();
-  }
-
-  static long timeCount = Instant.now().getEpochSecond() - 600;
-  static int totalCount;
-  private static UUID myuuid = UUID.randomUUID();
-  private static SalusEnrichedMetric buildMetric(String tenantId, String resourceId, Map<String, String> tags) {
-    Timestamp timestamp = Timestamp.newBuilder().setSeconds(timeCount).build();
-    timeCount += 60;
-    Metric part = Metric.newBuilder().setName("part").setInt(2).setTimestamp(timestamp).build();
-    Metric total = Metric.newBuilder().setName("total").setInt(totalCount).setTimestamp(timestamp).build();
-    totalCount += 120;
-    Metric totalCpu = Metric.newBuilder().setName("total_cpu").setInt(5).setTimestamp(timestamp).build();
- //   List<Metric> list = List.of(part, total, totalCpu);
-    List<Metric> list = new ArrayList<Metric>(Arrays.asList(part, total, totalCpu));
- 
-    SalusEnrichedMetric s =  new SalusEnrichedMetric();
-
-
-      s.setResourceId("my-resource")
-      .setMonitorId(myuuid)
-      .setZoneId("dfw")
-      .setMonitorType("http")
-      .setMonitorSelectorScope("remote")
-      .setMonitoringSystem("salus")
-      .setTags(tags != null ? tags : Map.of(
-            "os", "linux",
-            "metric", "something"))
-      .setMetrics(list)
-      .setTenantId("aaaaaa");
-
-    return s;
-  }
-
-  public void sendEvents() {
-    int metricRange = 10;
-    SalusEnrichedMetric m1 = buildMetric(null, null, null);
-    SalusEnrichedMetric m2 = buildMetric(null, null, null);
-
-    // send {metricRange} dupes of m1
-    // send {metricRange} dupes of m2
-    IntStream.range(0, metricRange).forEach(i -> {
-      log.info("sending valid metric 1-{}", i);
-      runtime.getEventService().sendEventBean(buildMetric(null, null, null), "SalusEnrichedMetric");
-//      log.info("sending valid metric 2-{}", i);
-//      runtime.getEventService().sendEventBean(m2, "SalusEnrichedMetric");
-    });
-  }
-
 }

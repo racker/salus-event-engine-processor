@@ -298,6 +298,7 @@ public class StateEvaluator {
   static private Metric evalCustomMetric(DerivativeNode node, List<Metric>metrics, List<Metric>prevMetrics) {
     Timestamp timestamp = null, oldTimestamp = null;
     Double metricValue = null, oldMetricValue = null;
+    // get current metric value
     for (Metric metric : metrics) {
       metricValue = getNumericOperandFromMetric(metric, node.getMetric());
       if (metricValue != null) {
@@ -305,6 +306,7 @@ public class StateEvaluator {
         break;
       }
     }
+    // get previous metric value
     for (Metric metric : prevMetrics) {
       oldMetricValue = getNumericOperandFromMetric(metric, node.getMetric());
       if (oldMetricValue != null) {
@@ -328,6 +330,7 @@ public class StateEvaluator {
     }
   }
 
+  // Returns true if the previous metric is required to evaluate custom metrics
   public static boolean includePrev(EventEngineTask task) {
     List<MetricExpressionBase> customMetrics = task.getTaskParameters().getCustomMetrics();
     if (customMetrics == null) {

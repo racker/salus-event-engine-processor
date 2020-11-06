@@ -249,7 +249,10 @@ public class StateEvaluatorTest {
     List<MetricExpressionBase> list = new ArrayList<>();
     list.add(node);
     String t = setTaskData(comparisonExpression, state, list);
+
+    // 20 - 10 shoud generate a rate of 10/ 60 seconds
     SalusEnrichedMetric metric = getSalusEnrichedMetric("data", 20);
+    // prev metric should be 60 seconds earlier than first
     long prevSeconds = metric.getMetrics().get(0).getTimestamp().getSeconds() - 60;
     SalusEnrichedMetric prevMetric = getSalusEnrichedMetric("data", 10, prevSeconds);
     SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(metric, prevMetric, t);

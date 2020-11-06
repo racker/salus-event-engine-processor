@@ -29,6 +29,7 @@ import com.rackspace.salus.telemetry.entities.EventEngineTaskParameters.LogicalE
 import com.rackspace.salus.telemetry.entities.EventEngineTaskParameters.StateExpression;
 import com.rackspace.salus.telemetry.entities.EventEngineTaskParameters.TaskState;
 import com.rackspace.salus.telemetry.entities.subtype.SalusEventEngineTask;
+import com.rackspace.salus.telemetry.model.DerivativeNode;
 import com.rackspace.salus.telemetry.model.MetricExpressionBase;
 import com.rackspace.salus.telemetry.model.PercentageEvalNode;
 import java.time.Instant;
@@ -217,7 +218,7 @@ public class StateEvaluatorTest {
     percentageTest("bad integer parameter", TaskState.OK);
   }
 
-  public void percentageTest(Object comparisonValue, TaskState state) {
+  private void percentageTest(Object comparisonValue, TaskState state) {
     ComparisonExpression comparisonExpression =
       genCompExpression("percentage", Comparator.LESS_THAN, comparisonValue);
     PercentageEvalNode node = new PercentageEvalNode().setPart("part").setTotal("total");
@@ -228,7 +229,30 @@ public class StateEvaluatorTest {
     SalusEnrichedMetric s = getSalusEnrichedMetric("part", 10);
     Metric total = Metric.newBuilder().setName("total").setInt(100).build();
     s.getMetrics().add(total);
-    SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, s, t);
+    SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, null, t);
+    assertThat(generatedMetric.getState()).isEqualTo("CRITICAL");
+  }
+
+  @Test
+  public void rateTest() {
+    // Test good parameter
+    rateTest(10, TaskState.CRITICAL);
+    // Test bad parameter passing in a string instead of an integer
+    rateTest("bad integer parameter", TaskState.OK);
+  }
+
+  private void rateTest(Object comparisonValue, TaskState state) {
+    ComparisonExpression comparisonExpression =
+      genCompExpression("dataRate", Comparator.EQUAL_TO, comparisonValue);
+    DerivativeNode node = new DerivativeNode().setMetric("data");
+    node.setAs("dataRate");
+    List<MetricExpressionBase> list = new ArrayList<>();
+    list.add(node);
+    String t = setTaskData(comparisonExpression, state, list);
+    SalusEnrichedMetric metric = getSalusEnrichedMetric("data", 20);
+    long prevSeconds = metric.getMetrics().get(0).getTimestamp().getSeconds() - 60;
+    SalusEnrichedMetric prevMetric = getSalusEnrichedMetric("data", 10, prevSeconds);
+    SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(metric, prevMetric, t);
     assertThat(generatedMetric.getState()).isEqualTo("CRITICAL");
   }
 
@@ -237,7 +261,10 @@ public class StateEvaluatorTest {
   }
 
   private SalusEnrichedMetric getSalusEnrichedMetric(String name, int val) {
-    Timestamp timestamp = Timestamp.newBuilder().setSeconds(Instant.now().getEpochSecond()).build();
+    return getSalusEnrichedMetric(name, val, Instant.now().getEpochSecond());
+  }
+  private SalusEnrichedMetric getSalusEnrichedMetric(String name, int val, long seconds) {
+    Timestamp timestamp = Timestamp.newBuilder().setSeconds(seconds).build();
     Metric m = Metric.newBuilder().setName(name).setInt(val).setTimestamp(timestamp).build();
     List<Metric> list = new ArrayList<>();
     list.add(m);

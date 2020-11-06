@@ -92,7 +92,10 @@ public class StateEvaluator {
     EsperTaskData data = taskDataMap.get(taskId);
 
     //prep custom metrics
-    List<Metric> metricList = metric.getMetrics();
+    List<Metric> metricList = metric.getMetrics(), prevMetricList = null;
+    if (prevMetric != null) {
+      prevMetricList = prevMetric.getMetrics();
+    }
 
     // Todo: send these to UMB
     List<Metric> evaluatedCustomMetricList = new ArrayList<>();
@@ -102,7 +105,7 @@ public class StateEvaluator {
     if (customMetrics != null) {
       for (MetricExpressionBase customMetric : customMetrics) {
         try {
-          evaluatedCustomMetricList.add(evalCustomMetric(customMetric, metricList, prevMetric.getMetrics()));
+          evaluatedCustomMetricList.add(evalCustomMetric(customMetric, metricList, prevMetricList));
         } catch (IllegalArgumentException e) {
           log.warn("Bad metric parameter used: {}", e.getMessage());
           return setMetricFields(metric, "CRITICAL", taskId);

@@ -34,7 +34,6 @@ import com.rackspace.salus.telemetry.entities.subtype.SalusEventEngineTask;
 import com.rackspace.salus.telemetry.model.DerivativeNode;
 import com.rackspace.salus.telemetry.model.MetricExpressionBase;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;

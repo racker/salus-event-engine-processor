@@ -34,6 +34,7 @@ import com.rackspace.salus.telemetry.entities.subtype.SalusEventEngineTask;
 import com.rackspace.salus.telemetry.model.DerivativeNode;
 import com.rackspace.salus.telemetry.model.MetricExpressionBase;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -268,6 +269,45 @@ public class EsperQueryTest {
     // confirm that listener doesn't return because the task has been removed
     assertThatThrownBy(() ->listener.waitForInvocation(2000))
         .isInstanceOf(RuntimeException.class);
+  }
+
+  @Test
+  public void testAddTaskWithDataWindow() throws EPUndeployException {
+    // we do not want to test anything beyond entry window so we can remove the connecting queries
+    esperEngine.undeploy("stateCountTableLogic");
+    esperEngine.undeploy("stateCountSatisfiedLogic");
+    SalusEnrichedMetric metric = createSalusEnrichedMetric();
+    Instant originalTimestamp = metric.getStateEvaluationTimestamp();
+    Instant modifiedTimeStamp = Instant.MAX;
+
+    SalusEventEngineTask eventEngineTask = getTask(metric);
+
+    //With a DerivativeNode, the epl will include a data window that skips the first metric
+    DerivativeNode node = new DerivativeNode();
+    List<MetricExpressionBase> customMetrics = List.of(node);
+    eventEngineTask.getTaskParameters().setCustomMetrics(customMetrics);
+    esperEngine.addTask(eventEngineTask);
+
+
+    EPStatement stmt = esperEngine.compileAndDeployQuery(
+        "@Audit select * from EntryWindow");
+    SupportUpdateListener listener = new SupportUpdateListener();
+    stmt.addListener(listener);
+
+    esperEngine.sendMetric(metric);
+
+    // confirm that listener doesn't return because the first metric has no previous
+    assertThatThrownBy(() ->listener.waitForInvocation(2000))
+        .isInstanceOf(RuntimeException.class);
+
+    //now change the metric to be sure we get the new one
+    assertThat(metric.getStateEvaluationTimestamp() != Instant.MAX);
+    metric.setStateEvaluationTimestamp(Instant.MAX);
+    esperEngine.sendMetric(metric);
+
+    EPAssertionUtil.assertProps(listener.assertOneGetNewAndReset(),
+        new String[]{"tenantId", "monitorId", "stateEvaluationTimestamp"},
+        new Object[]{metric.getTenantId(), metric.getMonitorId(), originalTimestamp});
   }
 
   private SalusEventEngineTask getTask(SalusEnrichedMetric metric) {

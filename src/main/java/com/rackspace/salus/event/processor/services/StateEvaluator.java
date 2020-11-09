@@ -92,10 +92,8 @@ public class StateEvaluator {
     EsperTaskData data = taskDataMap.get(taskId);
 
     //prep custom metrics
-    List<Metric> metricList = metric.getMetrics(), prevMetricList = null;
-    if (prevMetric != null) {
-      prevMetricList = prevMetric.getMetrics();
-    }
+    List<Metric> metricList = metric.getMetrics();
+    List<Metric> prevMetricList = prevMetric != null ? prevMetric.getMetrics() : null;
 
     // Todo: send these to UMB
     List<Metric> evaluatedCustomMetricList = new ArrayList<>();

@@ -277,8 +277,6 @@ public class EsperQueryTest {
     esperEngine.undeploy("stateCountTableLogic");
     esperEngine.undeploy("stateCountSatisfiedLogic");
     SalusEnrichedMetric metric = createSalusEnrichedMetric();
-    Instant originalTimestamp = metric.getStateEvaluationTimestamp();
-    Instant modifiedTimeStamp = Instant.MAX;
 
     SalusEventEngineTask eventEngineTask = getTask(metric);
 
@@ -301,13 +299,14 @@ public class EsperQueryTest {
         .isInstanceOf(RuntimeException.class);
 
     //now change the metric to be sure we get the new one
-    assertThat(metric.getStateEvaluationTimestamp() != Instant.MAX);
-    metric.setStateEvaluationTimestamp(Instant.MAX);
+    assertThat(metric.getExcludedResourceIds() == null);
+    List<String> newResources = List.of("newresources");
+    metric.setExcludedResourceIds(newResources);
     esperEngine.sendMetric(metric);
 
     EPAssertionUtil.assertProps(listener.assertOneGetNewAndReset(),
-        new String[]{"tenantId", "monitorId", "stateEvaluationTimestamp"},
-        new Object[]{metric.getTenantId(), metric.getMonitorId(), originalTimestamp});
+        new String[]{"tenantId", "monitorId", "excludedResourceIds"},
+        new Object[]{metric.getTenantId(), metric.getMonitorId(), newResources});
   }
 
   private SalusEventEngineTask getTask(SalusEnrichedMetric metric) {

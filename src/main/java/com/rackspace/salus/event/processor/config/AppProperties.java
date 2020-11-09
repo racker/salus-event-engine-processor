@@ -18,6 +18,7 @@ package com.rackspace.salus.event.processor.config;
 
 import java.time.Duration;
 import lombok.Data;
+import org.apache.commons.lang3.RandomStringUtils;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 import org.springframework.validation.annotation.Validated;
@@ -42,4 +43,6 @@ public class AppProperties {
    * In production it could be set to 1min or greater.
    */
   Duration partitionAssignmentDelay = Duration.ofSeconds(60);
+
+  String metricsConsumerListenerId = RandomStringUtils.randomAlphabetic(10);
 }

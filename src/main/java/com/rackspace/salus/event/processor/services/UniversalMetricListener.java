@@ -16,24 +16,14 @@
 
 package com.rackspace.salus.event.processor.services;
 
-import com.google.common.collect.Sets;
 import com.rackspace.monplat.protocol.UniversalMetricFrame;
 import com.rackspace.monplat.protocol.UniversalMetricFrame.MonitoringSystem;
 import com.rackspace.salus.common.messaging.KafkaTopicProperties;
 import com.rackspace.salus.event.processor.config.AppProperties;
-import java.time.Duration;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.kafka.common.TopicPartition;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -46,31 +36,24 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class UniversalMetricListener implements ConsumerSeekAware {
 
-  // the time to wait before (un)deploying tasks from old/new assigned partitions
-  public final Duration partitionAssignmentDelay;
-
-  private Set<Integer> trackedPartitions;
-  private ScheduledFuture<?> scheduledPartitionChangeTask;
   private final String listenerId;
-
-  ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor();
-
   private final UniversalMetricHandler handler;
   private final String topic;
   private final KafkaListenerEndpointRegistry registry;
+  private final PartitionTracker partitionTracker;
 
   @Autowired
   public UniversalMetricListener(
       AppProperties appProperties,
       UniversalMetricHandler handler,
       KafkaTopicProperties properties,
-      KafkaListenerEndpointRegistry registry) {
+      KafkaListenerEndpointRegistry registry,
+      PartitionTracker partitionTracker) {
     this.handler = handler;
     this.topic = properties.getMetrics();
     this.registry = registry;
-    this.trackedPartitions = Sets.newConcurrentHashSet();
-    this.listenerId = RandomStringUtils.randomAlphabetic(10);
-    this.partitionAssignmentDelay = appProperties.getPartitionAssignmentDelay();
+    this.partitionTracker = partitionTracker;
+    this.listenerId = appProperties.getMetricsConsumerListenerId();
   }
 
   /**
@@ -120,7 +103,7 @@ public class UniversalMetricListener implements ConsumerSeekAware {
             .map(TopicPartition::partition)
             .collect(Collectors.toSet()));
 
-    schedulePartitionReload();
+    partitionTracker.schedulePartitionReload();
   }
 
   @Override
@@ -131,63 +114,7 @@ public class UniversalMetricListener implements ConsumerSeekAware {
             .map(TopicPartition::partition)
             .collect(Collectors.toSet()));
 
-    schedulePartitionReload();
-  }
-
-  private void schedulePartitionReload() {
-    if (scheduledPartitionChangeTask != null && !scheduledPartitionChangeTask.isDone()) {
-      scheduledPartitionChangeTask.cancel(false);
-    }
-    scheduledPartitionChangeTask = executorService.schedule(
-        this::reloadPartitions,
-        partitionAssignmentDelay.toSeconds(),
-        TimeUnit.SECONDS);
-  }
-
-  /**
-   * Determine which partitions were removed and which were added.
-   *
-   * Remove deployed tasks for the removed partitions.
-   * Deploy new tasks for the added partitions.
-   */
-  private void reloadPartitions() {
-    log.info("Reloading changed partitions");
-    Set<Integer> assignedPartitions = getCurrentAssignedPartitions();
-
-    Set<Integer> removedPartitions = new HashSet<>(trackedPartitions);
-    removedPartitions.removeAll(assignedPartitions);
-
-    Set<Integer> addedPartitions = new HashSet<>(assignedPartitions);
-    addedPartitions.removeAll(trackedPartitions);
-
-    trackedPartitions = assignedPartitions;
-
-    handler.removeTasksForPartitions(removedPartitions);
-    handler.deployTasksForPartitions(addedPartitions);
-  }
-
-  Set<Integer> getCurrentAssignedPartitions() {
-    MessageListenerContainer container = registry.getListenerContainer(listenerId);
-    if (container == null) {
-      return Collections.emptySet();
-    }
-    Collection<TopicPartition> assignments = container.getAssignedPartitions();
-    if (assignments == null) {
-      return Collections.emptySet();
-    }
-
-    return assignments.stream()
-        .map(TopicPartition::partition)
-        .collect(Collectors.toSet());
-  }
-
-  /**
-   * Get the set of partitions the processor is handling tasks for.
-   *
-   * @return A set of partition ids.
-   */
-  Set<Integer> getTrackedPartitions() {
-    return this.trackedPartitions;
+    partitionTracker.schedulePartitionReload();
   }
 
   /**

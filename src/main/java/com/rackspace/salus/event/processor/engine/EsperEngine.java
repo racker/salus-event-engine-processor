@@ -39,6 +39,7 @@ import com.rackspace.salus.event.processor.services.StateEvaluator;
 import com.rackspace.salus.event.processor.services.TaskWarmthTracker;
 import com.rackspace.salus.telemetry.entities.EventEngineTask;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,7 +53,7 @@ public class EsperEngine {
 
   private final EPRuntime runtime;
   private final Configuration config;
-  private TaskWarmthTracker taskWarmthTracker;
+  private final TaskWarmthTracker taskWarmthTracker;
   private final EsperEventsListener esperEventsListener;
 
   @Autowired
@@ -213,15 +214,18 @@ public class EsperEngine {
   }
 
   public void removeTask(EventEngineTask t) {
-    String taskId = t.getId().toString();
-    String deploymentId = StateEvaluator.removeTaskData(taskId);
+    removeTask(t.getTenantId(), t.getId());
+  }
+
+  public void removeTask(String tenantId, UUID taskId) {
+    String deploymentId = StateEvaluator.removeTaskData(taskId.toString());
     if (deploymentId != null) {
       try {
         runtime.getDeploymentService().undeploy(deploymentId);
-        log.trace("Removing task for tenant={} task={}", t.getTenantId(), taskId);
+        log.trace("Removing task for tenant={} task={}", tenantId, taskId);
       } catch (EPUndeployException e) {
         log.trace("Exception removing task for tenant={} task={} exception message={}",
-          t.getTenantId(), taskId, e.getMessage());
+            tenantId, taskId, e.getMessage());
       }
     }
   }

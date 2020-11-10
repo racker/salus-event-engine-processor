@@ -6,13 +6,20 @@ spring:
   kafka:
     producer:
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
     consumer:
-      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer2
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+#      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer2
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      group-id: ${spring.application.name}-${salus.environment}
+      group-id: ${spring.application.name}-${salus.environment}-${random.value}
       auto-offset-reset: latest
       properties:
-        spring.deserializer.value.delegate.class: com.rackspace.monplat.protocol.UniversalMetricFrameDeserializer
+        spring:
+          json:
+            trusted:
+              packages: com.rackspace.salus.telemetry.messaging
+#      properties:
+#        spring.deserializer.value.delegate.class: com.rackspace.monplat.protocol.UniversalMetricFrameDeserializer
   jackson:
     mapper:
       default-view-inclusion: true

@@ -103,7 +103,7 @@ public class UniversalMetricListenerTest {
   @Before
   public void setup() {
     // increase the delay to help slow laptops running tests locally
-    testTimeout = appProperties.getPartitionAssignmentDelay().plus(Duration.ofSeconds(3)).toMillis();
+    testTimeout = appProperties.getPartitionAssignmentDelay().plus(Duration.ofSeconds(5)).toMillis();
   }
 
   @Test

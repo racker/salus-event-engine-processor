@@ -16,6 +16,7 @@
 
 package com.rackspace.salus.event.processor.services;
 
+import com.rackspace.salus.common.messaging.KafkaTopicProperties;
 import com.rackspace.salus.event.processor.caching.CachedRepositoryRequests;
 import com.rackspace.salus.event.processor.engine.EsperEngine;
 import com.rackspace.salus.telemetry.entities.BoundMonitor;
@@ -43,18 +44,37 @@ public class ChangeEventsListener {
   private final EsperEngine esperEngine;
   private final CachedRepositoryRequests cachedRepositoryRequests;
   private final BoundMonitorRepository boundMonitorRepository;
+  private final KafkaTopicProperties kafkaTopicProperties;
 
   public ChangeEventsListener(
       PartitionTracker partitionTracker,
       EventEngineTaskRepository taskRepository,
       EsperEngine esperEngine,
       CachedRepositoryRequests cachedRepositoryRequests,
-      BoundMonitorRepository boundMonitorRepository) {
+      BoundMonitorRepository boundMonitorRepository,
+      KafkaTopicProperties kafkaTopicProperties) {
     this.partitionTracker = partitionTracker;
     this.taskRepository = taskRepository;
     this.esperEngine = esperEngine;
     this.cachedRepositoryRequests = cachedRepositoryRequests;
     this.boundMonitorRepository = boundMonitorRepository;
+    this.kafkaTopicProperties = kafkaTopicProperties;
+  }
+
+  /**
+   * Used by the monitor change events listener.
+   * @return The topic containing MonitorChangeEvents
+   */
+  public String getMonitorTopic() {
+    return kafkaTopicProperties.getMonitorChanges();
+  }
+
+  /**
+   * Used by the task change events listener.
+   * @return The topic containing TaskChangeEvents
+   */
+  public String getTaskTopic() {
+    return kafkaTopicProperties.getTaskChanges();
   }
 
   /**
@@ -62,8 +82,11 @@ public class ChangeEventsListener {
    *
    * @param event Basic details of the monitor that has changed.
    */
-  @KafkaListener
+  @KafkaListener(topics = "#{__listener.monitorTopic}")
   public void consumeMonitorChangeEvents(MonitorChangeEvent event) {
+    log.debug("Processing monitor change event: {}", event);
+
+    cachedRepositoryRequests.clearMonitorIntervalCache(event.getTenantId(), event.getMonitorId());
 
     Pageable pageRequest = PageRequest.of(0, 1000);
     Page<BoundMonitor> boundMonitors = boundMonitorRepository
@@ -93,8 +116,10 @@ public class ChangeEventsListener {
    *
    * @param event Basic details of the task that has changed.
    */
-  @KafkaListener
+  @KafkaListener(topics = "#{__listener.taskTopic}")
   public void consumeTaskChangeEvents(TaskChangeEvent event) {
+    log.debug("Processing task change event: {}", event);
+
     if (!isPartitionAssigned(event.getPartitionId())) {
       return;
     }

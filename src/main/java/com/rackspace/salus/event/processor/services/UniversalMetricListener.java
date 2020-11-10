@@ -18,18 +18,23 @@ package com.rackspace.salus.event.processor.services;
 
 import com.rackspace.monplat.protocol.UniversalMetricFrame;
 import com.rackspace.monplat.protocol.UniversalMetricFrame.MonitoringSystem;
+import com.rackspace.monplat.protocol.UniversalMetricFrameDeserializer;
 import com.rackspace.salus.common.messaging.KafkaTopicProperties;
 import com.rackspace.salus.event.processor.config.AppProperties;
 import java.util.Collection;
 import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.StickyAssignor;
 import org.apache.kafka.common.TopicPartition;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.kafka.listener.ConsumerSeekAware;
 import org.springframework.kafka.listener.MessageListenerContainer;
+import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -41,6 +46,7 @@ public class UniversalMetricListener implements ConsumerSeekAware {
   private final String topic;
   private final KafkaListenerEndpointRegistry registry;
   private final PartitionTracker partitionTracker;
+  private final String kafkaGroupId;
 
   @Autowired
   public UniversalMetricListener(
@@ -48,12 +54,15 @@ public class UniversalMetricListener implements ConsumerSeekAware {
       UniversalMetricHandler handler,
       KafkaTopicProperties properties,
       KafkaListenerEndpointRegistry registry,
-      PartitionTracker partitionTracker) {
+      PartitionTracker partitionTracker,
+      @Value("${spring.application.name}") String appName,
+      @Value("${spring.environment}") String environment) {
     this.handler = handler;
     this.topic = properties.getMetrics();
     this.registry = registry;
     this.partitionTracker = partitionTracker;
     this.listenerId = appProperties.getMetricsConsumerListenerId();
+    this.kafkaGroupId = String.format("%s-%s", appName, environment);
   }
 
   /**
@@ -74,6 +83,23 @@ public class UniversalMetricListener implements ConsumerSeekAware {
     return listenerId;
   }
 
+  public String getGroupId() {
+    return this.kafkaGroupId;
+  }
+
+  /**
+   * Provide topic-specific properties to process UniversalMetricFrames.
+   * Overrides the default values used by other consumers.
+   */
+  public String getConsumerProperties() {
+    return String.join(
+        "\n",
+        ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG + "=" + StickyAssignor.class.getName(),
+        ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG + "=" + ErrorHandlingDeserializer.class.getName(),
+        ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS + "=" + UniversalMetricFrameDeserializer.class.getName()
+    );
+  }
+
   /**
    * This receives a UniversalMetricFrame event from Kafka and passes it on to
    * another service to process it.
@@ -83,10 +109,9 @@ public class UniversalMetricListener implements ConsumerSeekAware {
   @KafkaListener(
       autoStartup = "${salus.event-processor.kafka-listener-auto-start:true}",
       id = "#{__listener.listenerId}",
-      groupId = "${spring.kafka.consumer.group-id}",
+      groupId = "#{__listener.groupId}",
       topics = "#{__listener.topic}",
-      // override the default partition assignor to limit reassignment overhead
-      properties = {"partition.assignment.strategy=org.apache.kafka.clients.consumer.StickyAssignor"})
+      properties = "#{__listener.consumerProperties}")
   public void consumeUniversalMetrics(UniversalMetricFrame metric) {
     log.debug("Processing kapacitor event: {}", metric);
     if (metric.getMonitoringSystem().equals(MonitoringSystem.SALUS)) {

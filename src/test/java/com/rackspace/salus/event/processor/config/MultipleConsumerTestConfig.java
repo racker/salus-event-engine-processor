@@ -101,18 +101,18 @@ public class MultipleConsumerTestConfig {
   @Bean
   UniversalMetricListener consumer1() {
     return new UniversalMetricListener(appProperties1, handler, properties, registry,
-        tracker1);
+        tracker1, "event-processor", "test");
   }
 
   @Bean
   UniversalMetricListener consumer2() {
     return new UniversalMetricListener(appProperties2, handler, properties, registry,
-        tracker2);
+        tracker2, "event-processor", "test");
   }
 
   @Bean
   UniversalMetricListener consumer3() {
     return new UniversalMetricListener(appProperties3, handler, properties, registry,
-        tracker3);
+        tracker3, "event-processor", "test");
   }
 }

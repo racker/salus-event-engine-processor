@@ -192,16 +192,32 @@ public class EsperEngine {
         tagsString = " and " + tagsString;
       }
     }
-    String eplTemplate = "@name('%s:%s')\n" +
+    String eplRegularTemplate = "@name('%s:%s')\n" +
         "insert into EntryWindow\n" +
-        "select StateEvaluator.evalMetricState(metric, '%s') " +
+        "select StateEvaluator.evalMetricState(metric, null, '%s') " +
         "from SalusEnrichedMetric(" +
         // TODO: fix monitoringSystem etc when other fields are added
         "    monitoringSystem='SALUS' and\n" +
         "    tenantId='%s'%s) metric;";
 
-    return String.format(eplTemplate, tenantId, taskId,
-        taskId, tenantId, tagsString);
+    String eplPrevTemplate = "@name('%s:%s')\n" +
+        "insert into EntryWindow\n" +
+        "select StateEvaluator.evalMetricState(metric, prev(1, metric), '%s') " +
+        "from SalusEnrichedMetric(" +
+        // TODO: fix monitoringSystem etc when other fields are added
+        "    monitoringSystem='SALUS' and\n" +
+        "    tenantId='%s'%s).std:groupwin(tenantId, resourceId, monitorId, taskId, zoneId).win:length(2) metric where prev(1, metric) is not null;";
+     String eplTemplate;
+
+     if (StateEvaluator.includePrev(t)) {
+       eplTemplate = eplPrevTemplate;
+     } else {
+       eplTemplate = eplRegularTemplate;
+     }
+
+     return String.format(eplTemplate, tenantId, taskId,
+       taskId, tenantId, tagsString);
+
   }
 
   public void addTask(EventEngineTask t) {

@@ -29,6 +29,7 @@ import com.rackspace.salus.telemetry.entities.EventEngineTaskParameters.LogicalE
 import com.rackspace.salus.telemetry.entities.EventEngineTaskParameters.StateExpression;
 import com.rackspace.salus.telemetry.entities.EventEngineTaskParameters.TaskState;
 import com.rackspace.salus.telemetry.entities.subtype.SalusEventEngineTask;
+import com.rackspace.salus.telemetry.model.DerivativeNode;
 import com.rackspace.salus.telemetry.model.MetricExpressionBase;
 import com.rackspace.salus.telemetry.model.PercentageEvalNode;
 import java.time.Instant;
@@ -83,7 +84,7 @@ public class StateEvaluatorTest {
     for (ComparisonExpression comparisonExpression : trueList) {
       String taskId = setTaskData(comparisonExpression);
       SalusEnrichedMetric s = getSalusEnrichedMetric();
-      SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, taskId);
+      SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, null, taskId);
       assertThat(generatedMetric.getState()).isEqualTo("CRITICAL");
     }
   }
@@ -94,7 +95,7 @@ public class StateEvaluatorTest {
     for (ComparisonExpression comparisonExpression : falseList) {
       String taskId = setTaskData(comparisonExpression);
       SalusEnrichedMetric s = getSalusEnrichedMetric();
-      SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, taskId);
+      SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, null, taskId);
       assertThat(generatedMetric.getState()).isEqualTo("OK");
     }
   }
@@ -105,7 +106,7 @@ public class StateEvaluatorTest {
     for (ComparisonExpression comparisonExpression : trueStringList) {
       String taskId = setTaskData(comparisonExpression);
       SalusEnrichedMetric s = getStringMetric("banner", "abcdz");
-      SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, taskId);
+      SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, null, taskId);
       assertThat(generatedMetric.getState()).isEqualTo("CRITICAL");
     }
   }
@@ -116,7 +117,7 @@ public class StateEvaluatorTest {
     for (ComparisonExpression comparisonExpression : falseStringList) {
       String taskId = setTaskData(comparisonExpression);
       SalusEnrichedMetric s = getStringMetric("banner", "abcdz");
-      SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, taskId);
+      SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, null, taskId);
       assertThat(generatedMetric.getState()).isEqualTo("OK");
     }
   }
@@ -126,19 +127,19 @@ public class StateEvaluatorTest {
     // true AND true is critical
     String taskId = setLogicalTaskData(Operator.AND, trueList);
     SalusEnrichedMetric s = getSalusEnrichedMetric();
-    SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, taskId);
+    SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, null, taskId);
     assertThat(generatedMetric.getState()).isEqualTo("CRITICAL");
 
     // true AND false is ok state
     taskId = setLogicalTaskData(Operator.AND, List.of(trueList.get(0), falseList.get(0)));
     s = getSalusEnrichedMetric();
-    generatedMetric = StateEvaluator.evalMetricState(s, taskId);
+    generatedMetric = StateEvaluator.evalMetricState(s, null, taskId);
     assertThat(generatedMetric.getState()).isEqualTo("OK");
 
     // false AND false is ok state
     taskId = setLogicalTaskData(Operator.AND, falseList);
     s = getSalusEnrichedMetric();
-    generatedMetric = StateEvaluator.evalMetricState(s, taskId);
+    generatedMetric = StateEvaluator.evalMetricState(s, null, taskId);
     assertThat(generatedMetric.getState()).isEqualTo("OK");
   }
 
@@ -147,19 +148,19 @@ public class StateEvaluatorTest {
     // true OR true is critical
     String taskId = setLogicalTaskData(Operator.OR, trueList);
     SalusEnrichedMetric s = getSalusEnrichedMetric();
-    SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, taskId);
+    SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, null, taskId);
     assertThat(generatedMetric.getState()).isEqualTo("CRITICAL");
 
     // true OR false is critical
     taskId = setLogicalTaskData(Operator.OR, List.of(trueList.get(0), falseList.get(0)));
     s = getSalusEnrichedMetric();
-    generatedMetric = StateEvaluator.evalMetricState(s, taskId);
+    generatedMetric = StateEvaluator.evalMetricState(s, null, taskId);
     assertThat(generatedMetric.getState()).isEqualTo("CRITICAL");
 
     // false OR false is ok state
     taskId = setLogicalTaskData(Operator.OR, falseList);
     s = getSalusEnrichedMetric();
-    generatedMetric = StateEvaluator.evalMetricState(s, taskId);
+    generatedMetric = StateEvaluator.evalMetricState(s, null, taskId);
     assertThat(generatedMetric.getState()).isEqualTo("OK");
   }
 
@@ -168,7 +169,7 @@ public class StateEvaluatorTest {
     ComparisonExpression comparisonExpression = trueStringList.get(0);
     String taskId = setTaskData(comparisonExpression, TaskState.OK);
     SalusEnrichedMetric s = getSalusEnrichedMetric("banner", 3);
-    SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, taskId);
+    SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, null, taskId);
     // Note that even though there is no critical expression it still returns
     //  critical because of the bad parameter
     assertThat(generatedMetric.getState()).isEqualTo("CRITICAL");
@@ -180,7 +181,7 @@ public class StateEvaluatorTest {
       genCompExpression("banner", Comparator.REGEX_MATCH, 1);
     String taskId = setTaskData(comparisonExpression, TaskState.OK);
     SalusEnrichedMetric s = getStringMetric("banner", "valid string");
-    SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, taskId);
+    SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, null, taskId);
     // Note that even though there is no critical expression it still returns
     //  critical because of the bad parameter
     assertThat(generatedMetric.getState()).isEqualTo("CRITICAL");
@@ -191,7 +192,7 @@ public class StateEvaluatorTest {
     ComparisonExpression comparisonExpression = trueStringList.get(0);
     String taskId = setTaskData(comparisonExpression, TaskState.OK);
     SalusEnrichedMetric s = getStringMetric("total_cpu", "bad integer parameter");
-    SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, taskId);
+    SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, null, taskId);
     // Note that even though there is no critical expression it still returns
     //  critical because of the bad parameter
     assertThat(generatedMetric.getState()).isEqualTo("CRITICAL");
@@ -203,7 +204,7 @@ public class StateEvaluatorTest {
       genCompExpression("total_cpu", Comparator.LESS_THAN, "bad integer value");
     String taskId = setTaskData(comparisonExpression, TaskState.OK);
     SalusEnrichedMetric s = getSalusEnrichedMetric("total_cpu", 3);
-    SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, taskId);
+    SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, null, taskId);
     // Note that even though there is no critical expression it still returns
     //  critical because of the bad parameter
     assertThat(generatedMetric.getState()).isEqualTo("CRITICAL");
@@ -217,7 +218,7 @@ public class StateEvaluatorTest {
     percentageTest("bad integer parameter", TaskState.OK);
   }
 
-  public void percentageTest(Object comparisonValue, TaskState state) {
+  private void percentageTest(Object comparisonValue, TaskState state) {
     ComparisonExpression comparisonExpression =
       genCompExpression("percentage", Comparator.LESS_THAN, comparisonValue);
     PercentageEvalNode node = new PercentageEvalNode().setPart("part").setTotal("total");
@@ -228,7 +229,33 @@ public class StateEvaluatorTest {
     SalusEnrichedMetric s = getSalusEnrichedMetric("part", 10);
     Metric total = Metric.newBuilder().setName("total").setInt(100).build();
     s.getMetrics().add(total);
-    SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, t);
+    SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(s, null, t);
+    assertThat(generatedMetric.getState()).isEqualTo("CRITICAL");
+  }
+
+  @Test
+  public void rateTest() {
+    // Test good parameter
+    rateTest(10, TaskState.CRITICAL);
+    // Test bad parameter passing in a string instead of an integer
+    rateTest("bad integer parameter", TaskState.OK);
+  }
+
+  private void rateTest(Object comparisonValue, TaskState state) {
+    ComparisonExpression comparisonExpression =
+      genCompExpression("dataRate", Comparator.EQUAL_TO, comparisonValue);
+    DerivativeNode node = new DerivativeNode().setMetric("data");
+    node.setAs("dataRate");
+    List<MetricExpressionBase> list = new ArrayList<>();
+    list.add(node);
+    String t = setTaskData(comparisonExpression, state, list);
+
+    // 20 - 10 shoud generate a rate of 10/ 60 seconds
+    SalusEnrichedMetric metric = getSalusEnrichedMetric("data", 20);
+    // prev metric should be 60 seconds earlier than first
+    long prevSeconds = metric.getMetrics().get(0).getTimestamp().getSeconds() - 60;
+    SalusEnrichedMetric prevMetric = getSalusEnrichedMetric("data", 10, prevSeconds);
+    SalusEnrichedMetric generatedMetric = StateEvaluator.evalMetricState(metric, prevMetric, t);
     assertThat(generatedMetric.getState()).isEqualTo("CRITICAL");
   }
 
@@ -237,7 +264,10 @@ public class StateEvaluatorTest {
   }
 
   private SalusEnrichedMetric getSalusEnrichedMetric(String name, int val) {
-    Timestamp timestamp = Timestamp.newBuilder().setSeconds(Instant.now().getEpochSecond()).build();
+    return getSalusEnrichedMetric(name, val, Instant.now().getEpochSecond());
+  }
+  private SalusEnrichedMetric getSalusEnrichedMetric(String name, int val, long seconds) {
+    Timestamp timestamp = Timestamp.newBuilder().setSeconds(seconds).build();
     Metric m = Metric.newBuilder().setName(name).setInt(val).setTimestamp(timestamp).build();
     List<Metric> list = new ArrayList<>();
     list.add(m);

@@ -25,7 +25,7 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import com.rackspace.salus.common.messaging.KafkaTopicProperties;
 import com.rackspace.salus.event.processor.config.AppProperties;
-import com.rackspace.salus.event.processor.services.UniversalMetricListenerTest.TestConfig;
+import com.rackspace.salus.event.processor.config.MultipleConsumerTestConfig;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.Set;
@@ -37,12 +37,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.context.annotation.Bean;
-import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.kafka.test.context.EmbeddedKafka;
 import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.annotation.DirtiesContext.ClassMode;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.junit4.SpringRunner;
 
@@ -61,48 +59,18 @@ import org.springframework.test.context.junit4.SpringRunner;
 @SpringBootTest(
     properties = "spring.kafka.bootstrap-servers=${spring.embedded.kafka.brokers}",
     classes = {
-        KafkaAutoConfiguration.class, TestConfig.class,
+        KafkaAutoConfiguration.class, MultipleConsumerTestConfig.class,
         AppProperties.class, KafkaTopicProperties.class})
-@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
+@DirtiesContext(classMode = ClassMode.AFTER_EACH_TEST_METHOD)
 @ActiveProfiles("test")
 public class UniversalMetricListenerTest {
-
-  @TestConfiguration
-  public static class TestConfig {
-    @MockBean
-    UniversalMetricHandler handler;
-
-    @Autowired
-    KafkaTopicProperties properties;
-
-    @Autowired
-    AppProperties appProperties;
-
-    // all consumers will share a registry, but that's ok
-    // because they only look up info in their unique container
-    @Autowired
-    KafkaListenerEndpointRegistry registry;
-
-    @Bean
-    UniversalMetricListener consumer1() {
-      return new UniversalMetricListener(appProperties, handler, properties, registry);
-    }
-
-    @Bean
-    UniversalMetricListener consumer2() {
-      return new UniversalMetricListener(appProperties, handler, properties, registry);
-    }
-
-    @Bean
-    UniversalMetricListener consumer3() {
-      return new UniversalMetricListener(appProperties, handler, properties, registry);
-    }
-  }
 
   @Autowired
   AppProperties appProperties;
 
   long testTimeout;
+
+  // three different consumers are created in MultipleConsumerTestConfig.class
 
   @Autowired
   @Qualifier("consumer1")
@@ -116,13 +84,27 @@ public class UniversalMetricListenerTest {
   @Qualifier("consumer3")
   UniversalMetricListener consumer3;
 
+  // each consumer has its own partitionTracker, created in MultipleConsumerTestConfig.class
+
+  @Autowired
+  @Qualifier("tracker1")
+  PartitionTracker tracker1;
+
+  @Autowired
+  @Qualifier("tracker2")
+  PartitionTracker tracker2;
+
+  @Autowired
+  @Qualifier("tracker3")
+  PartitionTracker tracker3;
+
   @MockBean
   UniversalMetricHandler handler;
 
   @Before
   public void setup() {
     // increase the delay to help slow laptops running tests locally
-    testTimeout = appProperties.getPartitionAssignmentDelay().plus(Duration.ofSeconds(3)).toMillis();
+    testTimeout = appProperties.getPartitionAssignmentDelay().plus(Duration.ofSeconds(5)).toMillis();
   }
 
   @Test
@@ -132,8 +114,8 @@ public class UniversalMetricListenerTest {
     verify(handler, timeout(testTimeout)).removeTasksForPartitions(Collections.emptySet());
     verifyNoMoreInteractions(handler);
 
-    assertThat(consumer1.getCurrentAssignedPartitions()).hasSize(3);
-    assertThat(consumer1.getCurrentAssignedPartitions()).isEqualTo(consumer1.getTrackedPartitions());
+    assertThat(tracker1.getCurrentAssignedPartitions()).hasSize(3);
+    assertThat(tracker1.getCurrentAssignedPartitions()).isEqualTo(tracker1.getTrackedPartitions());
   }
 
   @Test
@@ -146,11 +128,11 @@ public class UniversalMetricListenerTest {
     verify(handler, timeout(testTimeout).times(2)).removeTasksForPartitions(Collections.emptySet());
     verifyNoMoreInteractions(handler);
 
-    assertThat(consumer1.getCurrentAssignedPartitions()).hasSize(2);
-    assertThat(consumer2.getCurrentAssignedPartitions()).hasSize(1);
+    assertThat(tracker1.getCurrentAssignedPartitions()).hasSize(2);
+    assertThat(tracker2.getCurrentAssignedPartitions()).hasSize(1);
 
-    assertThat(consumer1.getCurrentAssignedPartitions()).isEqualTo(consumer1.getTrackedPartitions());
-    assertThat(consumer2.getCurrentAssignedPartitions()).isEqualTo(consumer2.getTrackedPartitions());
+    assertThat(tracker1.getCurrentAssignedPartitions()).isEqualTo(tracker1.getTrackedPartitions());
+    assertThat(tracker2.getCurrentAssignedPartitions()).isEqualTo(tracker2.getTrackedPartitions());
   }
 
   @Test
@@ -165,13 +147,13 @@ public class UniversalMetricListenerTest {
     verify(handler, timeout(testTimeout).times(3)).removeTasksForPartitions(Collections.emptySet());
     verifyNoMoreInteractions(handler);
 
-    assertThat(consumer1.getCurrentAssignedPartitions()).hasSize(1);
-    assertThat(consumer2.getCurrentAssignedPartitions()).hasSize(1);
-    assertThat(consumer2.getCurrentAssignedPartitions()).hasSize(1);
+    assertThat(tracker1.getCurrentAssignedPartitions()).hasSize(1);
+    assertThat(tracker2.getCurrentAssignedPartitions()).hasSize(1);
+    assertThat(tracker2.getCurrentAssignedPartitions()).hasSize(1);
 
-    assertThat(consumer1.getCurrentAssignedPartitions()).isEqualTo(consumer1.getTrackedPartitions());
-    assertThat(consumer2.getCurrentAssignedPartitions()).isEqualTo(consumer2.getTrackedPartitions());
-    assertThat(consumer3.getCurrentAssignedPartitions()).isEqualTo(consumer3.getTrackedPartitions());
+    assertThat(tracker1.getCurrentAssignedPartitions()).isEqualTo(tracker1.getTrackedPartitions());
+    assertThat(tracker2.getCurrentAssignedPartitions()).isEqualTo(tracker2.getTrackedPartitions());
+    assertThat(tracker3.getCurrentAssignedPartitions()).isEqualTo(tracker3.getTrackedPartitions());
   }
 
   @Test
@@ -199,13 +181,13 @@ public class UniversalMetricListenerTest {
     verifyNoMoreInteractions(handler);
     reset(handler);
 
-    assertThat(consumer1.getCurrentAssignedPartitions()).hasSize(2);
-    assertThat(consumer2.getCurrentAssignedPartitions()).hasSize(1);
-    assertThat(consumer3.getCurrentAssignedPartitions()).isEmpty();
+    assertThat(tracker1.getCurrentAssignedPartitions()).hasSize(2);
+    assertThat(tracker2.getCurrentAssignedPartitions()).hasSize(1);
+    assertThat(tracker3.getCurrentAssignedPartitions()).isEmpty();
 
-    assertThat(consumer1.getCurrentAssignedPartitions()).isEqualTo(consumer1.getTrackedPartitions());
-    assertThat(consumer2.getCurrentAssignedPartitions()).isEqualTo(consumer2.getTrackedPartitions());
-    assertThat(consumer3.getCurrentAssignedPartitions()).isEqualTo(consumer3.getTrackedPartitions());
+    assertThat(tracker1.getCurrentAssignedPartitions()).isEqualTo(tracker1.getTrackedPartitions());
+    assertThat(tracker2.getCurrentAssignedPartitions()).isEqualTo(tracker2.getTrackedPartitions());
+    assertThat(tracker3.getCurrentAssignedPartitions()).isEqualTo(tracker3.getTrackedPartitions());
   }
 
   @Test
@@ -224,13 +206,13 @@ public class UniversalMetricListenerTest {
     verify(handler, timeout(testTimeout).times(3)).deployTasksForPartitions(anySet());
     verify(handler, timeout(testTimeout).times(3)).removeTasksForPartitions(anySet());
 
-    assertThat(consumer1.getCurrentAssignedPartitions()).isEmpty();
-    assertThat(consumer2.getCurrentAssignedPartitions()).hasSize(2);
-    assertThat(consumer3.getCurrentAssignedPartitions()).hasSize(1);
+    assertThat(tracker1.getCurrentAssignedPartitions()).isEmpty();
+    assertThat(tracker2.getCurrentAssignedPartitions()).hasSize(2);
+    assertThat(tracker3.getCurrentAssignedPartitions()).hasSize(1);
 
-    assertThat(consumer1.getTrackedPartitions()).isEmpty();
-    assertThat(consumer2.getCurrentAssignedPartitions()).isEqualTo(consumer2.getTrackedPartitions());
-    assertThat(consumer3.getCurrentAssignedPartitions()).isEqualTo(consumer3.getTrackedPartitions());
+    assertThat(tracker1.getTrackedPartitions()).isEmpty();
+    assertThat(tracker2.getCurrentAssignedPartitions()).isEqualTo(tracker2.getTrackedPartitions());
+    assertThat(tracker3.getCurrentAssignedPartitions()).isEqualTo(tracker3.getTrackedPartitions());
   }
 
 }

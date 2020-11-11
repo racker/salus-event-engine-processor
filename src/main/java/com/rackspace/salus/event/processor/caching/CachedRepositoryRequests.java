@@ -22,13 +22,16 @@ import static com.rackspace.salus.event.processor.config.CacheConfig.STATE_HISTO
 
 import com.rackspace.salus.event.processor.config.CacheConfig;
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
+import com.rackspace.salus.telemetry.entities.BoundMonitor;
 import com.rackspace.salus.telemetry.entities.Monitor;
 import com.rackspace.salus.telemetry.entities.StateChange;
 import com.rackspace.salus.telemetry.repositories.BoundMonitorRepository;
 import com.rackspace.salus.telemetry.repositories.MonitorRepository;
 import com.rackspace.salus.telemetry.repositories.StateChangeRepository;
 import java.time.Duration;
+import java.util.Collection;
 import java.util.UUID;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.CachePut;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.annotation.Import;
@@ -90,6 +93,23 @@ public class CachedRepositoryRequests {
   public StateChange saveAndCacheStateChange(StateChange stateChange) {
     _cachedRequests.updateStateChangeCache(stateChange);
     return stateChangeRepository.save(stateChange);
+  }
+
+  @CacheEvict(cacheNames = MONITOR_INTERVALS, key = "{#tenantId, #monitorId}")
+  public void clearMonitorIntervalCache(String tenantId, UUID monitorId) {
+  }
+
+  @CacheEvict(cacheNames = EXPECTED_EVENT_COUNTS, key = "{#tenantId, #resourceId, #monitorId}")
+  public void clearExpectedCountCache(String tenantId, String resourceId, UUID monitorId) {
+  }
+
+  public void clearExpectedCountCache(Collection<BoundMonitor> boundMonitors) {
+    for (BoundMonitor boundMonitor : boundMonitors) {
+      _cachedRequests.clearExpectedCountCache(
+          boundMonitor.getTenantId(),
+          boundMonitor.getResourceId(),
+          boundMonitor.getMonitor().getId());
+    }
   }
 
   @CachePut(cacheNames = STATE_HISTORY,

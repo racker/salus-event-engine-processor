@@ -20,18 +20,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import com.rackspace.salus.event.processor.model.SalusEnrichedMetric;
+import com.rackspace.salus.telemetry.entities.BoundMonitor;
 import com.rackspace.salus.telemetry.entities.Monitor;
 import com.rackspace.salus.telemetry.entities.StateChange;
 import com.rackspace.salus.telemetry.repositories.BoundMonitorRepository;
 import com.rackspace.salus.telemetry.repositories.MonitorRepository;
 import com.rackspace.salus.telemetry.repositories.StateChangeRepository;
 import java.time.Duration;
+import java.util.Collections;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -66,10 +70,9 @@ public class CachedRepositoryRequestsTest {
 
 
   @Test
-  public void getMonitorIntervalTest() {
+  public void testGetMonitorInterval_AndEvict() {
     when(monitorRepository.findByIdAndTenantId(any(), anyString()))
-        .thenReturn(Optional.of(
-            new Monitor().setInterval(Duration.ofMinutes(1))));
+        .thenReturn(Optional.of(new Monitor().setInterval(Duration.ofMinutes(1))));
 
     String tenantId = RandomStringUtils.randomAlphanumeric(5);
     UUID monitorId = UUID.randomUUID();
@@ -85,10 +88,22 @@ public class CachedRepositoryRequestsTest {
     // no db lookup on subsequent requests.
     verifyNoMoreInteractions(monitorRepository);
     assertThat(interval).isEqualTo(Duration.ofMinutes(1));
+
+    // clear the mock's history and reset the details
+    reset(monitorRepository);
+    when(monitorRepository.findByIdAndTenantId(any(), anyString()))
+        .thenReturn(Optional.of(new Monitor().setInterval(Duration.ofMinutes(2))));
+
+    // clear the cache
+    repositoryRequests.clearMonitorIntervalCache(tenantId, monitorId);
+    // subsequent request queries the db again.
+    interval = repositoryRequests.getMonitorInterval(tenantId, monitorId);
+    verify(monitorRepository).findByIdAndTenantId(monitorId, tenantId);
+    assertThat(interval).isEqualTo(Duration.ofMinutes(2));
   }
 
   @Test
-  public void getExpectedEventCountForMonitorTest() {
+  public void testGetExpectedEventCountForMonitor_AndEvict() {
     when(boundMonitorRepository.countAllByResourceIdAndMonitor_IdAndMonitor_TenantId(
         anyString(), any(), anyString()))
         .thenReturn(3);
@@ -107,10 +122,32 @@ public class CachedRepositoryRequestsTest {
     // no db lookup on subsequent requests.
     verifyNoMoreInteractions(boundMonitorRepository);
     assertThat(expectedCount).isEqualTo(3);
+
+    // clear the mock's history and reset the details
+    reset(boundMonitorRepository);
+    when(boundMonitorRepository.countAllByResourceIdAndMonitor_IdAndMonitor_TenantId(
+        anyString(), any(), anyString()))
+        .thenReturn(5);
+
+    // clear the cache
+    Set<BoundMonitor> boundMonitors = Collections.singleton(
+        new BoundMonitor()
+            .setTenantId(metric.getTenantId())
+            .setResourceId(metric.getResourceId())
+            .setMonitor(new Monitor().setId(metric.getMonitorId())));
+
+    repositoryRequests.clearExpectedCountCache(boundMonitors);
+
+    // subsequent request queries the db again.
+    expectedCount = repositoryRequests.getExpectedEventCountForMonitor(metric);
+
+    verify(boundMonitorRepository).countAllByResourceIdAndMonitor_IdAndMonitor_TenantId(
+        metric.getResourceId(), metric.getMonitorId(), metric.getTenantId());
+    assertThat(expectedCount).isEqualTo(5);
   }
 
   @Test
-  public void getPreviousKnownStateTest() {
+  public void testGetPreviousKnownState() {
     final StateChange stateChange = podamFactory.manufacturePojo(StateChange.class);
 
     when(stateChangeRepository.findFirstByTenantIdAndResourceIdAndMonitorIdAndTaskId(
@@ -144,7 +181,7 @@ public class CachedRepositoryRequestsTest {
   }
 
   @Test
-  public void saveAndCacheStateChangeTest() {
+  public void testSaveAndCacheStateChange() {
     final StateChange stateChange = podamFactory.manufacturePojo(StateChange.class);
 
     // first save a new state in the db and cache
@@ -164,5 +201,4 @@ public class CachedRepositoryRequestsTest {
         anyString(), anyString(), any(), any());
     verifyNoMoreInteractions(stateChangeRepository);
   }
-
 }

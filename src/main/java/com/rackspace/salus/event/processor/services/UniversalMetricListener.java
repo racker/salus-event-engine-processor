@@ -56,7 +56,7 @@ public class UniversalMetricListener implements ConsumerSeekAware {
       KafkaListenerEndpointRegistry registry,
       PartitionTracker partitionTracker,
       @Value("${spring.application.name}") String appName,
-      @Value("${spring.environment}") String environment) {
+      @Value("${salus.environment}") String environment) {
     this.handler = handler;
     this.topic = properties.getMetrics();
     this.registry = registry;
